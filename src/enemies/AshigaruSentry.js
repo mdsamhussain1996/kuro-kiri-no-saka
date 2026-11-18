@@ -6,6 +6,7 @@ import { StateMachine } from '../core/StateMachine.js';
 import { AABB } from '../physics/Collision.js';
 import { Hitbox, combatManager } from '../physics/Hitbox.js';
 import { events } from '../core/EventBus.js';
+import { addInkOutline } from '../render/SumieMaterial.js';
 
 export class AshigaruSentry {
   constructor({ scene, collision, inkSplash, x = 0, y = 0, facing = -1, patrolMinX = -5, patrolMaxX = 5, isStationary = false }) {
@@ -61,8 +62,8 @@ export class AshigaruSentry {
     this.meshGroup = new THREE.Group();
     this.meshGroup.position.set(this.aabb.x, this.aabb.y, 0);
 
-    // Body (armored soldier)
-    const bodyGeo = new THREE.BoxGeometry(cfg.width, cfg.height * 0.75, 0.5);
+    // Body (armored foot soldier with grounded legs & black ink outlines)
+    const bodyGeo = new THREE.CylinderGeometry(0.28, 0.34, 0.78, 8);
     this.bodyMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkMid),
       roughness: 0.7,
@@ -70,33 +71,55 @@ export class AshigaruSentry {
       opacity: 1.0,
     });
     this.bodyMesh = new THREE.Mesh(bodyGeo, this.bodyMat);
-    this.bodyMesh.position.y = -0.15;
+    this.bodyMesh.position.y = 0.05;
     this.bodyMesh.castShadow = true;
+    addInkOutline(this.bodyMesh, 0.032);
     this.meshGroup.add(this.bodyMesh);
 
+    // Legs & Boots grounded at -cfg.height * 0.5
+    const legGeo = new THREE.CylinderGeometry(0.11, 0.08, 0.65, 8);
+    const legL = new THREE.Mesh(legGeo, this.bodyMat);
+    legL.position.set(-0.10, -cfg.height * 0.5 + 0.32, -0.10);
+    addInkOutline(legL, 0.025);
+    this.meshGroup.add(legL);
+
+    const legR = new THREE.Mesh(legGeo, this.bodyMat);
+    legR.position.set(0.12, -cfg.height * 0.5 + 0.32, 0.10);
+    addInkOutline(legR, 0.025);
+    this.meshGroup.add(legR);
+
+    // Head
+    const headGeo = new THREE.SphereGeometry(0.19, 8, 8);
+    const headMesh = new THREE.Mesh(headGeo, this.bodyMat);
+    headMesh.position.y = 0.55;
+    addInkOutline(headMesh, 0.025);
+    this.meshGroup.add(headMesh);
+
     // Jingasa conical war hat
-    const hatGeo = new THREE.ConeGeometry(0.7, 0.3, 8);
+    const hatGeo = new THREE.ConeGeometry(0.75, 0.28, 14);
     this.hatMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
       roughness: 0.9,
     });
     this.hatMesh = new THREE.Mesh(hatGeo, this.hatMat);
-    this.hatMesh.position.y = cfg.height * 0.5;
+    this.hatMesh.position.y = 0.72;
     this.hatMesh.castShadow = true;
+    addInkOutline(this.hatMesh, 0.035);
     this.meshGroup.add(this.hatMesh);
 
     // Yari Spear (shaft + vermilion-tipped blade)
     this.spearGroup = new THREE.Group();
-    this.spearGroup.position.set(0.3, 0, 0.25);
+    this.spearGroup.position.set(0.25, 0.05, 0.28);
 
     const shaftGeo = new THREE.CylinderGeometry(0.04, 0.04, cfg.attackReach, 6);
     shaftGeo.rotateZ(Math.PI / 2);
-    const shaftMat = new THREE.MeshStandardMaterial({ color: 0x3d352e, roughness: 0.8 });
+    const shaftMat = new THREE.MeshStandardMaterial({ color: 0x26221e, roughness: 0.8 });
     const shaftMesh = new THREE.Mesh(shaftGeo, shaftMat);
-    shaftMesh.position.x = cfg.attackReach * 0.5;
+    shaftMesh.position.x = cfg.attackReach * 0.45;
+    addInkOutline(shaftMesh, 0.022);
     this.spearGroup.add(shaftMesh);
 
-    const spearTipGeo = new THREE.ConeGeometry(0.12, 0.6, 6);
+    const spearTipGeo = new THREE.ConeGeometry(0.13, 0.65, 6);
     spearTipGeo.rotateZ(-Math.PI / 2);
     this.spearTipMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color(CONFIG.PALETTE.vermilion),
@@ -104,7 +127,8 @@ export class AshigaruSentry {
       metalness: 0.8,
     });
     const spearTipMesh = new THREE.Mesh(spearTipGeo, this.spearTipMat);
-    spearTipMesh.position.x = cfg.attackReach + 0.25;
+    spearTipMesh.position.x = cfg.attackReach + 0.15;
+    addInkOutline(spearTipMesh, 0.025);
     this.spearGroup.add(spearTipMesh);
 
     this.meshGroup.add(this.spearGroup);

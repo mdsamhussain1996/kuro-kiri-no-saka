@@ -17,7 +17,7 @@ import { PostProcessingSystem } from './render/PostFX.js';
 import { Level1 } from './level/Level1.js';
 import { LEVEL1_DATA } from './level/level1.data.js';
 import { AudioEngine } from './audio/AudioEngine.js';
-import { HUD } from './ui/HUD.js';
+import { HUD, SUMIRO_CHAPTERS } from './ui/HUD.js';
 import { DialogueCard } from './ui/DialogueCard.js';
 import { PauseMenu } from './ui/PauseMenu.js';
 import { EndCard } from './ui/EndCard.js';
@@ -42,7 +42,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(CONFIG.PALETTE.parchment);
-scene.fog = new THREE.FogExp2(new THREE.Color(CONFIG.PALETTE.parchment).getHex(), 0.022);
+scene.fog = new THREE.FogExp2(new THREE.Color(CONFIG.PALETTE.parchment).getHex(), 0.004);
 
 // 2.5D Camera per §1: Perspective FOV 38 deg, 22 units back on +Z, 7 deg downward tilt
 const camera = new THREE.PerspectiveCamera(
@@ -98,18 +98,24 @@ const level = new Level1({
   inkSplash,
 });
 
-// URL parameter overrides for rapid testing & act jumping (?act=2, ?act=3, ?boss=1)
+// URL parameter overrides for rapid testing & chapter/act jumping (?chapter=1..6, ?act=2, ?act=3, ?boss=1)
 const params = new URLSearchParams(window.location.search);
 let spawnX = LEVEL1_DATA.spawn.x;
 let spawnY = LEVEL1_DATA.spawn.y;
 let startDashUnlocked = false;
 
-if (params.get('act') === '2') {
-  spawnX = 112;
-  spawnY = 16.5;
+const chapterParam = parseInt(params.get('chapter') || '0', 10);
+if (chapterParam >= 1 && chapterParam <= 6) {
+  const ch = SUMIRO_CHAPTERS[chapterParam - 1];
+  spawnX = ch.spawnX;
+  spawnY = ch.spawnY;
+  startDashUnlocked = ch.dash;
+} else if (params.get('act') === '2') {
+  spawnX = 105;
+  spawnY = 17.5;
   startDashUnlocked = true;
 } else if (params.get('act') === '3' || params.get('boss') === '1') {
-  spawnX = 244;
+  spawnX = 255.0;
   spawnY = 50.0;
   startDashUnlocked = true;
 }
@@ -128,15 +134,29 @@ const player = new KuroController({
 });
 player.hasInkStepUnlocked = startDashUnlocked;
 
-// --- UI Subsystems ---
-const hud = new HUD();
+// Target vertical camera height (platformer vertical lock per §1)
+let targetCameraY = spawnX >= 244 ? 53.5 : spawnY + 2.5;
+camera.position.x = spawnX >= 244 ? 259.0 : spawnX;
+camera.position.y = targetCameraY;
+camera.position.z = spawnX >= 244 ? 27.5 : CONFIG.CAMERA.distanceZ;
+
+// --- UI Subsystems (with 6-Chapter Sumiro Jump Handler) ---
+const hud = new HUD((ch) => {
+  player.aabb.x = ch.spawnX;
+  player.aabb.y = ch.spawnY;
+  player.velocity.x = 0;
+  player.velocity.y = 0;
+  player.hasInkStepUnlocked = ch.dash;
+  player.setCheckpoint(ch.spawnX, ch.spawnY);
+  player.health = player.maxHealth;
+  const inBoss = ch.spawnX >= 244;
+  targetCameraY = inBoss ? 53.5 : ch.spawnY + 2.5;
+  camera.position.x = inBoss ? 259.0 : ch.spawnX;
+  camera.position.y = targetCameraY;
+  camera.position.z = inBoss ? 27.5 : CONFIG.CAMERA.distanceZ;
+});
 const dialogue = new DialogueCard();
 const endCard = new EndCard();
-
-// Target vertical camera height (platformer vertical lock per §1)
-let targetCameraY = spawnY + 2.5;
-camera.position.x = spawnX;
-camera.position.y = targetCameraY;
 
 // Window resize & visibility handlers
 window.addEventListener('resize', () => {
@@ -188,8 +208,10 @@ function onFixedUpdate(dt) {
   ripples.update(dt);
   inkSplash.update(dt);
 
-  // Platformer-style vertical lock: only follow vertical target when grounded
-  if (player.coyoteTimer > 0) {
+  // Platformer-style vertical lock: only follow vertical target when grounded (or lock in Boss Arena per §1)
+  if (player.aabb.x >= 244) {
+    targetCameraY = 53.5;
+  } else if (player.coyoteTimer > 0) {
     targetCameraY = player.aabb.y + 2.5;
   }
 
@@ -201,15 +223,24 @@ function onRender(alpha) {
   player.render(alpha);
   level.render(alpha);
 
-  // Horizontal camera follow with dead-zone and look-ahead per §1
-  const targetCamX = player.aabb.x + player.facing * CONFIG.CAMERA.lookAhead;
-  const dx = targetCamX - camera.position.x;
-  if (Math.abs(dx) > CONFIG.CAMERA.horizontalDeadzone) {
-    camera.position.x += (targetCamX - camera.position.x) * 0.08;
-  }
+  const inBossArena = player.aabb.x >= 244;
+  if (inBossArena) {
+    // Fixed Boss Arena framing showing whole arena, Torii, Pale Moon, Pines, Kuro & Kurogane per §1
+    camera.position.x += (259.0 - camera.position.x) * 0.08;
+    camera.position.y += (53.5 - camera.position.y) * 0.08;
+    camera.position.z += (27.5 - camera.position.z) * 0.08;
+  } else {
+    // Horizontal camera follow with dead-zone and look-ahead per §1
+    const targetCamX = player.aabb.x + player.facing * CONFIG.CAMERA.lookAhead;
+    const dx = targetCamX - camera.position.x;
+    if (Math.abs(dx) > CONFIG.CAMERA.horizontalDeadzone) {
+      camera.position.x += (targetCamX - camera.position.x) * 0.08;
+    }
 
-  // Vertical camera follow (damped towards locked height)
-  camera.position.y += (targetCameraY - camera.position.y) * 0.045;
+    // Vertical camera follow (damped towards locked height)
+    camera.position.y += (targetCameraY - camera.position.y) * 0.045;
+    camera.position.z += (CONFIG.CAMERA.distanceZ - camera.position.z) * 0.08;
+  }
 
   // Update Parallax Mountain Background
   parallax.update(camera.position.x, camera.position.y);

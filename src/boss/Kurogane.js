@@ -6,6 +6,7 @@ import { StateMachine } from '../core/StateMachine.js';
 import { AABB } from '../physics/Collision.js';
 import { Hitbox, combatManager } from '../physics/Hitbox.js';
 import { events } from '../core/EventBus.js';
+import { createSumieMaterial, addInkOutline } from '../render/SumieMaterial.js';
 
 export class Kurogane {
   constructor({ scene, collision, inkSplash, shockwaves, x = 260, y = 50 }) {
@@ -79,82 +80,198 @@ export class Kurogane {
 
   buildBossModel() {
     const cfg = CONFIG.BOSS;
+    const bottomY = -cfg.height * 0.5; // -2.4
 
-    const armorMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(CONFIG.PALETTE.inkDark),
-      roughness: 0.6,
-      metalness: 0.3,
+    const armorMat = createSumieMaterial({
+      inkDark: 0x111110,
+      inkMid: 0x2c2b28,
+      inkLight: 0x5d5b54,
+      noiseScale: 6.5,
+      darkBias: 0.20,
     });
 
-    const plateMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(CONFIG.PALETTE.inkMid),
-      roughness: 0.7,
+    const plateMat = createSumieMaterial({
+      inkDark: 0x191816,
+      inkMid: 0x45433e,
+      inkLight: 0x7c7970,
+      noiseScale: 5.5,
+      darkBias: 0.08,
     });
 
-    // 1. Torso & Ō-yoroi chest plates
-    const torsoGeo = new THREE.BoxGeometry(cfg.width * 0.75, cfg.height * 0.45, 1.2);
+    // 1. Armored Legs, Hakama & Greaves (Planted at bottomY = -2.4)
+    const buildBossLeg = (zOffset, strideX) => {
+      const legGrp = new THREE.Group();
+      legGrp.position.set(strideX, bottomY + 1.85, zOffset);
+
+      // Hakama thigh
+      const thighGeo = new THREE.CylinderGeometry(0.45, 0.56, 1.0, 10);
+      const thigh = new THREE.Mesh(thighGeo, armorMat);
+      thigh.position.y = -0.45;
+      addInkOutline(thigh, 0.048);
+      legGrp.add(thigh);
+
+      // Demon knee guard
+      const kneeGeo = new THREE.SphereGeometry(0.34, 8, 8);
+      const knee = new THREE.Mesh(kneeGeo, plateMat);
+      knee.position.set(0.18, -0.92, 0);
+      addInkOutline(knee, 0.04);
+      legGrp.add(knee);
+
+      // Suneate Armored Shin Greave
+      const shinGeo = new THREE.CylinderGeometry(0.32, 0.24, 0.9, 10);
+      const shin = new THREE.Mesh(shinGeo, plateMat);
+      shin.position.y = -1.35;
+      addInkOutline(shin, 0.042);
+      legGrp.add(shin);
+
+      // Armored War Boot
+      const footGeo = new THREE.BoxGeometry(0.75, 0.24, 0.42);
+      const foot = new THREE.Mesh(footGeo, armorMat);
+      foot.position.set(0.16, -1.78, 0);
+      addInkOutline(foot, 0.04);
+      legGrp.add(foot);
+
+      this.meshGroup.add(legGrp);
+      return legGrp;
+    };
+
+    this.leftLeg = buildBossLeg(-0.42, -0.25);
+    this.rightLeg = buildBossLeg(0.42, 0.30);
+
+    // 2. Torso & Ō-yoroi Lamellar Chest Armor
+    const torsoGeo = new THREE.CylinderGeometry(0.92, 0.78, 1.75, 12);
     this.torso = new THREE.Mesh(torsoGeo, armorMat);
-    this.torso.position.y = 0.2;
+    this.torso.position.y = 0.32;
     this.torso.castShadow = true;
+    addInkOutline(this.torso, 0.055);
     this.meshGroup.add(this.torso);
 
-    // 2. Kabuto Helmet & Crescent Moon Horns (Maedate)
-    const helmetGeo = new THREE.CylinderGeometry(0.8, 1.1, 1.0, 8);
+    // Kusazuri (Armored Waist Tasset Skirt Plates)
+    for (let i = -1; i <= 1; i++) {
+      const tassetGeo = new THREE.BoxGeometry(0.55, 0.95, 1.45);
+      const tasset = new THREE.Mesh(tassetGeo, plateMat);
+      tasset.position.set(i * 0.44, -0.65, 0);
+      tasset.rotation.z = i * 0.16;
+      addInkOutline(tasset, 0.042);
+      this.meshGroup.add(tasset);
+    }
+
+    // 3. Demon Lion Shoulder Pauldrons (Sode) & Armored Arms
+    const buildShoulderAndArm = (zSign) => {
+      const sodeGrp = new THREE.Group();
+      sodeGrp.position.set(0, 1.05, zSign * 0.85);
+
+      const sodeGeo = new THREE.BoxGeometry(0.95, 0.85, 0.45);
+      const sode = new THREE.Mesh(sodeGeo, plateMat);
+      sode.rotation.x = zSign * 0.25;
+      addInkOutline(sode, 0.048);
+      sodeGrp.add(sode);
+
+      // Forearm gauntlet
+      const armGeo = new THREE.CylinderGeometry(0.28, 0.24, 1.25, 8);
+      const arm = new THREE.Mesh(armGeo, armorMat);
+      arm.position.set(0.28, -0.65, zSign * 0.1);
+      arm.rotation.z = 0.35;
+      addInkOutline(arm, 0.04);
+      sodeGrp.add(arm);
+
+      this.meshGroup.add(sodeGrp);
+    };
+    buildShoulderAndArm(-1);
+    buildShoulderAndArm(1);
+
+    // 4. Tattered Sumi-e War Cape (Billowing behind Kurogane as in boss_arena.jpg)
+    const capeGeo = new THREE.ConeGeometry(1.4, 3.4, 7, 1, true);
+    const capeMat = createSumieMaterial({
+      inkDark: 0x0e0e0d,
+      inkMid: 0x22211e,
+      inkLight: 0x3d3b36,
+      darkBias: 0.35,
+    });
+    const cape = new THREE.Mesh(capeGeo, capeMat);
+    cape.position.set(-1.15, -0.1, 0);
+    cape.rotation.z = -0.52;
+    addInkOutline(cape, 0.048);
+    this.meshGroup.add(cape);
+
+    // 5. Kabuto Helmet, Shikoro Neck Guard & Crescent Moon Horns (Maedate)
+    const helmetGeo = new THREE.ConeGeometry(0.95, 1.05, 10);
     this.helmet = new THREE.Mesh(helmetGeo, armorMat);
-    this.helmet.position.y = cfg.height * 0.5 - 0.2;
+    this.helmet.position.set(0.08, 1.65, 0);
     this.helmet.castShadow = true;
+    addInkOutline(this.helmet, 0.048);
     this.meshGroup.add(this.helmet);
 
-    // Horns (crescent curve)
-    const hornGeo = new THREE.TorusGeometry(1.2, 0.08, 6, 16, Math.PI * 0.8);
-    hornGeo.rotateZ(-Math.PI * 0.4);
-    const hornMat = new THREE.MeshStandardMaterial({
-      color: 0x2b2824,
-      roughness: 0.4,
-      metalness: 0.6,
-    });
-    this.horns = new THREE.Mesh(hornGeo, hornMat);
-    this.horns.position.set(0.1, cfg.height * 0.5 + 0.5, 0.3);
+    // Crescent Horns (Maedate)
+    const hornGeo = new THREE.TorusGeometry(0.92, 0.09, 6, 16, Math.PI * 0.85);
+    hornGeo.rotateZ(-Math.PI * 0.35);
+    this.horns = new THREE.Mesh(hornGeo, plateMat);
+    this.horns.position.set(0.35, 2.15, 0);
+    addInkOutline(this.horns, 0.036);
     this.meshGroup.add(this.horns);
 
-    // Menpō Demon Mask (dark with glint)
-    const maskGeo = new THREE.BoxGeometry(0.7, 0.6, 0.5);
-    const maskMat = new THREE.MeshStandardMaterial({ color: 0x141413, roughness: 0.5 });
-    this.mask = new THREE.Mesh(maskGeo, maskMat);
-    this.mask.position.set(0.4, cfg.height * 0.5 - 0.4, 0);
+    // Menpō Demon Mask
+    const maskGeo = new THREE.BoxGeometry(0.68, 0.58, 0.65);
+    this.mask = new THREE.Mesh(maskGeo, armorMat);
+    this.mask.position.set(0.32, 1.32, 0);
+    addInkOutline(this.mask, 0.038);
     this.meshGroup.add(this.mask);
 
-    // 3. Weak Point Back Plate (Glowing Vermilion Crack)
-    const weakGeo = new THREE.BoxGeometry(0.2, 0.8, 0.7);
+    // 6. Weak Point Back Plate (Glowing Vermilion Crack)
+    const weakGeo = new THREE.BoxGeometry(0.28, 0.95, 0.85);
     this.weakMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
     });
     this.weakMesh = new THREE.Mesh(weakGeo, this.weakMat);
-    this.weakMesh.position.set(-cfg.width * 0.4, 0.3, 0);
+    this.weakMesh.position.set(-cfg.width * 0.42, 0.35, 0);
     this.meshGroup.add(this.weakMesh);
 
-    // 4. Nodachi Blade (Massive 5.5-unit katana dripping tar)
+    // 7. Colossal Curved Nodachi Blade Dripping Black Ink (matching boss_arena.jpg!)
     this.swordGroup = new THREE.Group();
-    this.swordGroup.position.set(0.6, 0.2, 0.7);
+    this.swordGroup.position.set(0.55, 0.15, 0.72);
+    this.swordGroup.rotation.z = -0.26; // Menacing low-angled forward stance
 
-    // Long curved blade
-    const bladeGeo = new THREE.BoxGeometry(5.2, 0.22, 0.08);
-    const bladeMat = new THREE.MeshStandardMaterial({
-      color: 0x1f1d1a,
-      roughness: 0.3,
-      metalness: 0.7,
-    });
-    const blade = new THREE.Mesh(bladeGeo, bladeMat);
-    blade.position.x = 2.6;
+    // Long hilt (Tsuka) & guard (Tsuba)
+    const hiltGeo = new THREE.CylinderGeometry(0.11, 0.10, 1.5, 8);
+    hiltGeo.rotateZ(Math.PI / 2);
+    const hilt = new THREE.Mesh(hiltGeo, armorMat);
+    hilt.position.x = -0.45;
+    addInkOutline(hilt, 0.035);
+    this.swordGroup.add(hilt);
+
+    const guardGeo = new THREE.BoxGeometry(0.14, 0.65, 0.55);
+    const guard = new THREE.Mesh(guardGeo, plateMat);
+    guard.position.x = 0.28;
+    addInkOutline(guard, 0.035);
+    this.swordGroup.add(guard);
+
+    // Massive Ink-Stained Curved Blade
+    const bladeGeo = new THREE.BoxGeometry(4.8, 0.32, 0.09);
+    const blade = new THREE.Mesh(bladeGeo, plateMat);
+    blade.position.x = 2.65;
     blade.castShadow = true;
+    addInkOutline(blade, 0.045);
     this.swordGroup.add(blade);
 
-    // Dripping Tar Tip (Vermilion edge)
-    const tipGeo = new THREE.ConeGeometry(0.16, 0.8, 4);
+    // Dripping Black Sumi-e Ink Stalactites Hanging off the Nodachi Blade (as in boss_arena.jpg!)
+    const dripMat = new THREE.MeshBasicMaterial({ color: 0x111110 });
+    const dripPositions = [1.4, 2.05, 2.7, 3.35, 4.0, 4.6];
+    dripPositions.forEach((dx, idx) => {
+      const dripLen = 0.45 + (idx % 3) * 0.38;
+      const dripGeo = new THREE.ConeGeometry(0.065, dripLen, 6);
+      dripGeo.rotateX(Math.PI); // Point downward
+      const drip = new THREE.Mesh(dripGeo, dripMat);
+      drip.position.set(dx, -0.16 - dripLen * 0.45, 0);
+      this.swordGroup.add(drip);
+    });
+
+    // Dripping Tar Tip (Vermilion/Ink edge)
+    const tipGeo = new THREE.ConeGeometry(0.22, 0.9, 5);
     tipGeo.rotateZ(-Math.PI / 2);
     this.tipMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(CONFIG.PALETTE.inkDark) });
     const tip = new THREE.Mesh(tipGeo, this.tipMat);
-    tip.position.x = 5.3;
+    tip.position.x = 5.25;
+    addInkOutline(tip, 0.04);
     this.swordGroup.add(tip);
 
     this.meshGroup.add(this.swordGroup);
@@ -166,8 +283,8 @@ export class Kurogane {
     // --- DORMANT (WAITING FOR PLAYER ARENA ENTRY) ---
     this.fsm.addState('Dormant', {
       enter: () => {
-        this.aabb.y = this.groundY + 16.0; // Perched up on Torii
-        this.meshGroup.position.y = this.groundY + 16.0;
+        this.aabb.y = this.groundY + 5.5; // Perched up on Torii
+        this.meshGroup.position.y = this.groundY + 5.5;
         this.attackHitbox.deactivate();
       },
       fixedUpdate: (dt, player) => {
@@ -181,8 +298,8 @@ export class Kurogane {
     // --- INTRO CINEMATIC (LEAP FROM TORII, SHOCKWAVE, ROAR) ---
     this.fsm.addState('Intro', {
       enter: () => {
-        this.stateTimer = 3.5;
-        this.velocity.y = -22.0; // Drop from Torii crossbar
+        this.stateTimer = 2.0;
+        this.velocity.y = -45.0; // Fast thunderous drop from Torii crossbar
         events.emit('boss_intro_start', { name: cfg.name });
       },
       fixedUpdate: (dt) => {
