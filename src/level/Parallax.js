@@ -1,6 +1,6 @@
-// Parallax Mountain Background System — Infinite-Resolution Vector Sumi-e Shan-Shui Mountains
-// Uses high-density vertex-colored BufferGeometry mountain silhouettes & ridge outlines
-// for razor-sharp, zero-pixelation ink-wash mountains at any camera distance or resolution.
+// Parallax Mountain & Mist System — True 3D Multi-Faceted Shan-Shui Mountain Ranges
+// Generates realistic 3D eroded mountain ridges with sunlit eastern slopes, shadowed western cliffs,
+// craggy internal ridgelines, ridge-top pine silhouettes, and drifting volumetric valley clouds.
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
@@ -9,19 +9,20 @@ export class ParallaxBackground {
   constructor(scene) {
     this.scene = scene;
     this.layers = [];
+    this.mistClouds = [];
 
     const parchmentColor = new THREE.Color(CONFIG.PALETTE.parchment);
 
-    // 4 Layers of Vector Shan-Shui Mountains from distant pale ink wash to dark midground peaks
+    // 4 Layers of 3D Multi-Faceted Shan-Shui Mountain Ranges
     const layerConfigs = [
-      { depth: -90, factor: 0.05, peakColor: '#969288', midColor: '#c2bdb0', peaks: 18, amp: 22, baseY: -4, seed: 11 },
-      { depth: -62, factor: 0.10, peakColor: '#6b6860', midColor: '#9c988c', peaks: 22, amp: 18, baseY: -6, seed: 29 },
-      { depth: -38, factor: 0.16, peakColor: '#43413c', midColor: '#757269', peaks: 26, amp: 14, baseY: -7, seed: 47 },
-      { depth: -20, factor: 0.24, peakColor: '#242320', midColor: '#524f49', peaks: 32, amp: 10, baseY: -8, seed: 73 },
+      { depth: -92, factor: 0.05, litColor: '#b5b0a3', shadowColor: '#7d7970', ridgeColor: '#5e5b54', peaks: 14, amp: 26, baseY: -3, seed: 17 },
+      { depth: -64, factor: 0.10, litColor: '#999488', shadowColor: '#59564f', ridgeColor: '#3d3b36', peaks: 18, amp: 21, baseY: -5, seed: 31 },
+      { depth: -38, factor: 0.16, litColor: '#7a766c', shadowColor: '#383631', ridgeColor: '#22211e', peaks: 22, amp: 16, baseY: -6, seed: 53 },
+      { depth: -20, factor: 0.24, litColor: '#5c5951', shadowColor: '#21201d', ridgeColor: '#141413', peaks: 26, amp: 11, baseY: -7, seed: 79 },
     ];
 
     layerConfigs.forEach((cfg) => {
-      const group = this.buildVectorMountainLayer(cfg, parchmentColor);
+      const group = this.build3DFacetedMountainRange(cfg, parchmentColor);
       group.position.set(150, cfg.baseY, cfg.depth);
       this.scene.add(group);
 
@@ -32,6 +33,9 @@ export class ParallaxBackground {
         factor: cfg.factor,
       });
     });
+
+    // Animated Drifting Volumetric Valley Mist Clouds between Mountain Layers
+    this.buildDriftingMistClouds();
   }
 
   seededRandom(seed) {
@@ -42,72 +46,119 @@ export class ParallaxBackground {
     };
   }
 
-  buildVectorMountainLayer(cfg, parchmentColor) {
+  // Multi-octave craggy ridge noise (sharp eroded peaks: 1 - |sin|)
+  ridgeHeight(t, peaks, amp, seed, rand) {
+    const p1 = Math.pow(1.0 - Math.abs(Math.sin(t * Math.PI * peaks + seed)), 1.35) * amp;
+    const p2 = Math.pow(1.0 - Math.abs(Math.sin(t * Math.PI * peaks * 2.17 + seed * 1.7)), 1.5) * (amp * 0.45);
+    const p3 = Math.sin(t * Math.PI * peaks * 0.5 + seed * 0.4) * (amp * 0.35);
+    const p4 = Math.cos(t * Math.PI * peaks * 5.3 + seed * 2.3) * (amp * 0.12);
+    const jagged = (rand() - 0.5) * (amp * 0.05);
+    return Math.max(1.5, 3.0 + p1 + p2 + p3 + p4 + jagged);
+  }
+
+  build3DFacetedMountainRange(cfg, parchmentColor) {
     const group = new THREE.Group();
     const rand = this.seededRandom(cfg.seed);
 
     const totalWidth = 480;
     const halfW = totalWidth * 0.5;
-    const segments = 640; // ~0.75 world unit per vertex: razor sharp vector ridges!
-    const bottomY = -28;
+    const segments = 480;
+    const bottomY = -26;
 
-    const positions = new Float32Array((segments + 1) * 2 * 3);
-    const colors = new Float32Array((segments + 1) * 2 * 3);
-    const indices = [];
+    const litCol = new THREE.Color(cfg.litColor);
+    const shadowCol = new THREE.Color(cfg.shadowColor);
+    const ridgeCol = new THREE.Color(cfg.ridgeColor);
 
-    const ridgePoints = [];
-    const peakCol = new THREE.Color(cfg.peakColor);
-    const midCol = new THREE.Color(cfg.midColor);
-
+    // Precompute crest heights & mid-slope spur vertices for 3D faceted sunlit/shadowed triangles
+    const crestPts = [];
     for (let i = 0; i <= segments; i++) {
       const t = i / segments;
       const x = -halfW + t * totalWidth;
+      const y = this.ridgeHeight(t, cfg.peaks, cfg.amp, cfg.seed, rand);
+      crestPts.push({ x, y });
+    }
 
-      // Towering steep karst mountain silhouette (classical Shan-Shui profile)
-      const w1 = Math.pow(Math.abs(Math.sin(t * Math.PI * cfg.peaks + cfg.seed)), 0.72) * cfg.amp;
-      const w2 = Math.sin(t * Math.PI * (cfg.peaks * 2.3) + cfg.seed * 1.9) * (cfg.amp * 0.35);
-      const w3 = Math.cos(t * Math.PI * (cfg.peaks * 5.7) + cfg.seed * 0.7) * (cfg.amp * 0.14);
-      const crag = (rand() - 0.5) * (cfg.amp * 0.06);
+    // Build Non-Indexed Faceted Triangle Mesh so each slope facet has realistic sunlit vs shadowed face coloration
+    const triPositions = [];
+    const triColors = [];
+    const ridgeLinePoints = [];
+    const spurLines = [];
 
-      const y = 4.0 + w1 + w2 + w3 + crag;
-      ridgePoints.push(new THREE.Vector3(x, y, 0.05));
+    for (let i = 0; i < segments; i++) {
+      const p0 = crestPts[i];
+      const p1 = crestPts[i + 1];
+      ridgeLinePoints.push(new THREE.Vector3(p0.x, p0.y, 0.08));
 
-      // Top vertex (Mountain Crest)
-      const vTop = i * 2;
-      positions[vTop * 3 + 0] = x;
-      positions[vTop * 3 + 1] = y;
-      positions[vTop * 3 + 2] = 0;
+      // Slope direction determines whether this mountain face catches sunlight (left/rising slope) or deep ink shadow (right/falling slope)
+      const dy = p1.y - p0.y;
+      const isSunlitFace = dy >= 0;
+      const slopeSteepness = THREE.MathUtils.clamp(Math.abs(dy) / 1.2, 0.15, 1.0);
 
-      // Crest color modulated slightly by peak elevation
-      const elevNorm = THREE.MathUtils.clamp((y - 4.0) / (cfg.amp * 1.3), 0, 1);
-      const topC = midCol.clone().lerp(peakCol, elevNorm);
-      colors[vTop * 3 + 0] = topC.r;
-      colors[vTop * 3 + 1] = topC.g;
-      colors[vTop * 3 + 2] = topC.b;
+      const topC0 = isSunlitFace
+        ? litCol.clone().lerp(parchmentColor, 0.18 * slopeSteepness)
+        : shadowCol.clone().lerp(ridgeCol, 0.45 * slopeSteepness);
+      const topC1 = topC0.clone();
 
-      // Bottom vertex (Misty Valley Base blending seamlessly into parchment)
-      const vBot = i * 2 + 1;
-      positions[vBot * 3 + 0] = x;
-      positions[vBot * 3 + 1] = bottomY;
-      positions[vBot * 3 + 2] = 0;
+      // Mid-altitude rocky spur vertex (gives 3D ridge facets down the mountain face)
+      const midX = (p0.x + p1.x) * 0.5 + (dy >= 0 ? -0.35 : 0.35);
+      const midY = (p0.y + p1.y) * 0.5 - cfg.amp * 0.55;
+      const midC = topC0.clone().lerp(parchmentColor, 0.52);
 
-      colors[vBot * 3 + 0] = parchmentColor.r;
-      colors[vBot * 3 + 1] = parchmentColor.g;
-      colors[vBot * 3 + 2] = parchmentColor.b;
+      // Upper Facet Triangles: (p0, mid, p1)
+      triPositions.push(
+        p0.x, p0.y, 0,
+        midX, midY, 0.25,
+        p1.x, p1.y, 0
+      );
+      triColors.push(
+        topC0.r, topC0.g, topC0.b,
+        midC.r, midC.g, midC.b,
+        topC1.r, topC1.g, topC1.b
+      );
 
-      if (i < segments) {
-        const a = i * 2;
-        const b = i * 2 + 1;
-        const c = (i + 1) * 2;
-        const d = (i + 1) * 2 + 1;
-        indices.push(a, b, c, b, d, c);
+      // Lower Slope Triangles fading into valley mist: (p0, bot0, mid) & (mid, bot0, bot1) & (mid, bot1, p1)
+      const b0x = p0.x;
+      const b1x = p1.x;
+      triPositions.push(
+        p0.x, p0.y, 0,
+        b0x, bottomY, 0,
+        midX, midY, 0.25,
+
+        midX, midY, 0.25,
+        b0x, bottomY, 0,
+        b1x, bottomY, 0,
+
+        midX, midY, 0.25,
+        b1x, bottomY, 0,
+        p1.x, p1.y, 0
+      );
+
+      triColors.push(
+        topC0.r, topC0.g, topC0.b,
+        parchmentColor.r, parchmentColor.g, parchmentColor.b,
+        midC.r, midC.g, midC.b,
+
+        midC.r, midC.g, midC.b,
+        parchmentColor.r, parchmentColor.g, parchmentColor.b,
+        parchmentColor.r, parchmentColor.g, parchmentColor.b,
+
+        midC.r, midC.g, midC.b,
+        parchmentColor.r, parchmentColor.g, parchmentColor.b,
+        topC1.r, topC1.g, topC1.b
+      );
+
+      // At local peaks, drop an internal dark ink ridge line (cunfa brush stroke) down the spur!
+      if (i > 1 && i < segments - 1 && p0.y > crestPts[i - 1].y && p0.y > p1.y) {
+        spurLines.push(
+          new THREE.Vector3(p0.x, p0.y, 0.12),
+          new THREE.Vector3(midX + (rand() - 0.5) * 1.8, midY + 1.5, 0.28)
+        );
       }
     }
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geo.setIndex(indices);
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(triPositions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(triColors, 3));
 
     const mat = new THREE.MeshBasicMaterial({
       vertexColors: true,
@@ -115,33 +166,86 @@ export class ParallaxBackground {
       depthWrite: false,
       fog: false,
     });
+    group.add(new THREE.Mesh(geo, mat));
 
-    const mesh = new THREE.Mesh(geo, mat);
-    group.add(mesh);
+    // Crisp Calligraphic Crest Outline
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(ridgeLinePoints);
+    const lineMat = new THREE.LineBasicMaterial({ color: ridgeCol, fog: false });
+    group.add(new THREE.Line(lineGeo, lineMat));
 
-    // Crisp Vector Calligraphic Ink Ridge Line along the crest
-    const lineGeo = new THREE.BufferGeometry().setFromPoints(ridgePoints);
-    const lineMat = new THREE.LineBasicMaterial({
-      color: peakCol,
-      fog: false,
-    });
-    const ridgeLine = new THREE.Line(lineGeo, lineMat);
-    group.add(ridgeLine);
+    // Internal Vertical Cliff Ridge Strokes (Cunfa)
+    if (spurLines.length > 0) {
+      const spurGeo = new THREE.BufferGeometry().setFromPoints(spurLines);
+      const spurMat = new THREE.LineBasicMaterial({
+        color: ridgeCol,
+        transparent: true,
+        opacity: 0.55,
+        fog: false,
+      });
+      group.add(new THREE.LineSegments(spurGeo, spurMat));
+    }
 
     return group;
   }
 
+  buildDriftingMistClouds() {
+    if (typeof document === 'undefined') return;
+
+    // Soft radial sumi-e mist puff texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 64, 10, 128, 64, 115);
+    grad.addColorStop(0.0, 'rgba(234, 229, 217, 0.82)');
+    grad.addColorStop(0.55, 'rgba(234, 229, 217, 0.42)');
+    grad.addColorStop(1.0, 'rgba(234, 229, 217, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 128);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const cloudMat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      depthWrite: false,
+      fog: false,
+    });
+
+    const cloudGeo = new THREE.PlaneGeometry(42, 14);
+    for (let i = 0; i < 18; i++) {
+      const mesh = new THREE.Mesh(cloudGeo, cloudMat);
+      const z = -15 - (i % 4) * 18;
+      const x = -20 + i * 22;
+      const y = 2 + (i % 5) * 9;
+      mesh.position.set(x, y, z);
+      this.scene.add(mesh);
+      this.mistClouds.push({
+        mesh,
+        baseX: x,
+        baseY: y,
+        speed: 0.6 + (i % 3) * 0.4,
+        phase: i * 1.1,
+      });
+    }
+  }
+
   update(cameraX, cameraY) {
+    const t = performance.now() * 0.001;
     for (let i = 0; i < this.layers.length; i++) {
       const layer = this.layers[i];
       layer.mesh.position.x = cameraX - (cameraX - 150) * layer.factor;
       layer.mesh.position.y = cameraY + layer.baseY - (cameraY - 12) * (layer.factor * 0.25);
     }
+
+    for (let i = 0; i < this.mistClouds.length; i++) {
+      const c = this.mistClouds[i];
+      const drift = Math.sin(t * 0.25 + c.phase) * 6.0;
+      c.mesh.position.x = c.baseX + drift + (cameraX - 150) * 0.15;
+    }
   }
 
   dispose() {
-    this.layers.forEach(l => {
-      this.scene.remove(l.mesh);
-    });
+    this.layers.forEach(l => this.scene.remove(l.mesh));
+    this.mistClouds.forEach(c => this.scene.remove(c.mesh));
   }
 }

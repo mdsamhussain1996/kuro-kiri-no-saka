@@ -158,6 +158,22 @@ const hud = new HUD((ch) => {
 const dialogue = new DialogueCard();
 const endCard = new EndCard();
 
+// --- INNOVATIVE SUMI-E POWERS & 3D CAMERA PERSPECTIVE MODES ---
+// 0 = 2.5D Scroll View, 1 = 3D Cinema Angled Perspective, 2 = 3D Close Action Cam
+let cameraPerspectiveMode = params.get('cam') === '3d' ? 1 : 0;
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyE') {
+    level.paintInkBridge(player.aabb.x, player.aabb.y, player.facing);
+    events.emit('camera_shake', { amount: 0.14 });
+  } else if (e.code === 'KeyF') {
+    level.triggerBellResonance(player);
+    events.emit('camera_shake', { amount: 0.32 });
+  } else if (e.code === 'KeyV') {
+    cameraPerspectiveMode = (cameraPerspectiveMode + 1) % 3;
+  }
+});
+
 // Window resize & visibility handlers
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -224,22 +240,45 @@ function onRender(alpha) {
   level.render(alpha);
 
   const inBossArena = player.aabb.x >= 244;
-  if (inBossArena) {
+  if (inBossArena && cameraPerspectiveMode === 0) {
     // Fixed Boss Arena framing showing whole arena, Torii, Pale Moon, Pines, Kuro & Kurogane per §1
     camera.position.x += (259.0 - camera.position.x) * 0.08;
     camera.position.y += (53.5 - camera.position.y) * 0.08;
     camera.position.z += (27.5 - camera.position.z) * 0.08;
+    camera.rotation.y += (0 - camera.rotation.y) * 0.08;
+    camera.rotation.x += (-THREE.MathUtils.degToRad(CONFIG.CAMERA.tiltDeg) - camera.rotation.x) * 0.08;
+  } else if (cameraPerspectiveMode === 1) {
+    // 3D Cinema Over-Shoulder Angled Perspective (like the 3D shots in the Sumiro video!)
+    const targetCamX = player.aabb.x - player.facing * 4.2;
+    const targetCamY = player.aabb.y + 3.2;
+    const targetCamZ = 14.5;
+    camera.position.x += (targetCamX - camera.position.x) * 0.08;
+    camera.position.y += (targetCamY - camera.position.y) * 0.08;
+    camera.position.z += (targetCamZ - camera.position.z) * 0.08;
+    camera.rotation.y += (-player.facing * 0.34 - camera.rotation.y) * 0.08;
+    camera.rotation.x += (-0.12 - camera.rotation.x) * 0.08;
+  } else if (cameraPerspectiveMode === 2) {
+    // 3D Close Action Combat Cam
+    const targetCamX = player.aabb.x + player.facing * 1.4;
+    const targetCamY = player.aabb.y + 1.6;
+    const targetCamZ = 14.0;
+    camera.position.x += (targetCamX - camera.position.x) * 0.09;
+    camera.position.y += (targetCamY - camera.position.y) * 0.08;
+    camera.position.z += (targetCamZ - camera.position.z) * 0.08;
+    camera.rotation.y += (0 - camera.rotation.y) * 0.08;
+    camera.rotation.x += (-0.06 - camera.rotation.x) * 0.08;
   } else {
-    // Horizontal camera follow with dead-zone and look-ahead per §1
+    // Standard 2.5D Painted Scroll Camera Follow
     const targetCamX = player.aabb.x + player.facing * CONFIG.CAMERA.lookAhead;
     const dx = targetCamX - camera.position.x;
     if (Math.abs(dx) > CONFIG.CAMERA.horizontalDeadzone) {
       camera.position.x += (targetCamX - camera.position.x) * 0.08;
     }
 
-    // Vertical camera follow (damped towards locked height)
     camera.position.y += (targetCameraY - camera.position.y) * 0.045;
     camera.position.z += (CONFIG.CAMERA.distanceZ - camera.position.z) * 0.08;
+    camera.rotation.y += (0 - camera.rotation.y) * 0.08;
+    camera.rotation.x += (-THREE.MathUtils.degToRad(CONFIG.CAMERA.tiltDeg) - camera.rotation.x) * 0.08;
   }
 
   // Update Parallax Mountain Background

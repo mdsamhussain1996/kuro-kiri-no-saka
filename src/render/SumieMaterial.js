@@ -1,6 +1,6 @@
-// Sumi-e Ink-Wash Custom Shader Material & Calligraphic Ink Outline System
-// High-contrast 4-step sumi-e tonal wash, dark ink silhouette Fresnel contours,
-// dry-brush paper tooth grain, and inverted-hull calligraphic black ink outlines.
+// Sumi-e Ink-Wash Custom Shader Material — Realistic Painterly Ink Wash & Calligraphic Outlines
+// Smooth multi-octave ink wash gradients, directional rock/fabric micro-texture,
+// hemisphere ambient occlusion, specular rim sheen, and variable-width ink outlines.
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
@@ -9,11 +9,13 @@ const vertexShader = /* glsl */ `
   varying vec3 vNormal;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPosition;
+  varying vec3 vLocalPosition;
   varying vec2 vUv;
   varying vec3 vViewPosition;
 
   void main() {
     vUv = uv;
+    vLocalPosition = position;
     vNormal = normalize(normalMatrix * normal);
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
@@ -43,33 +45,35 @@ const fragmentShader = /* glsl */ `
   varying vec3 vNormal;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPosition;
+  varying vec3 vLocalPosition;
   varying vec2 vUv;
   varying vec3 vViewPosition;
 
-  // Procedural 2D hash & FBM brush-stroke noise
+  // Smooth gradient value noise for natural paper & brush wash (no blocky artifacts)
   float hash(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
   }
 
   float noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); // Quintic C2 continuous interpolation
     float a = hash(i);
     float b = hash(i + vec2(1.0, 0.0));
     float c = hash(i + vec2(0.0, 1.0));
     float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
   }
 
   float fbm(vec2 p) {
     float v = 0.0;
     float amp = 0.5;
-    for (int i = 0; i < 3; i++) {
+    mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
+    for (int i = 0; i < 4; i++) {
       v += amp * noise(p);
-      p *= 2.15;
+      p = rot * p * 2.05;
       amp *= 0.5;
     }
     return v;
@@ -81,54 +85,53 @@ const fragmentShader = /* glsl */ `
     vec3 lightDir = normalize(uLightDirection);
     vec3 viewDir = normalize(vViewPosition);
 
-    // Directional sumi-e lighting with strong front-top illumination for crisp tonal separation
+    // Realistic half-Lambert diffuse lighting + sky-ground hemisphere ambient occlusion
     float NdotL = dot(worldNormal, lightDir);
-    float lightIntensity = clamp((NdotL + 1.05) * 0.56 - uDarkBias * 0.45, 0.0, 1.0);
+    float halfLambert = clamp(NdotL * 0.5 + 0.5, 0.0, 1.0);
+    float hemiAO = clamp(worldNormal.y * 0.35 + 0.65, 0.25, 1.0);
+    float baseLight = clamp(halfLambert * hemiAO * 1.15 - uDarkBias * 0.4, 0.0, 1.0);
 
-    // Directional dry-brush streak noise (stretched horizontally like brush strokes)
-    vec2 brushCoord = vec2(vWorldPosition.x * 0.65, vWorldPosition.y * 1.4) * uNoiseScale;
-    float brushGrain = (fbm(brushCoord) - 0.5) * 0.22;
-    float fineTooth = (noise(vWorldPosition.xy * uNoiseScale * 3.5) - 0.5) * 0.10;
-    float perturbed = lightIntensity + brushGrain + fineTooth;
+    // Fine directional brush & stone strata texture (subtle, realistic, non-blotchy)
+    vec2 strataCoord = vec2(vWorldPosition.x * 0.45, vWorldPosition.y * 1.8) * uNoiseScale;
+    float washVariation = (fbm(strataCoord) - 0.5) * 0.14;
+    float paperGrain = (noise(vWorldPosition.xy * 18.0) - 0.5) * 0.045;
+    float lit = clamp(baseLight + washVariation + paperGrain, 0.0, 1.0);
 
-    // 4-Step Sumi-e Tonal Wash Quantization (Balanced Ink & Paper Washes)
+    // Painterly Sumi-e Continuous Multi-Tone Wash with soft wet-ink transitions
     vec3 tone;
-    if (perturbed < 0.22) {
-      tone = uInkDark;
-    } else if (perturbed < 0.48) {
-      tone = mix(uInkDark, uInkMid, smoothstep(0.20, 0.36, perturbed));
-    } else if (perturbed < 0.72) {
-      tone = mix(uInkMid, uInkLight, smoothstep(0.46, 0.62, perturbed));
+    if (lit < 0.32) {
+      tone = mix(uInkDark, uInkMid, smoothstep(0.08, 0.32, lit));
+    } else if (lit < 0.66) {
+      tone = mix(uInkMid, uInkLight, smoothstep(0.32, 0.66, lit));
     } else {
-      tone = mix(uInkLight, uParchment, smoothstep(0.70, 0.88, perturbed));
+      tone = mix(uInkLight, uParchment, smoothstep(0.66, 0.96, lit));
     }
 
-    // Internal masonry / brush crevice darkened lines
-    float crevice = abs(fract(vWorldPosition.y * 0.85 + brushGrain * 0.5) - 0.5);
-    if (crevice < 0.035 && uInkContourStrength > 0.5) {
-      tone = mix(uInkDark, tone, 0.35);
-    }
+    // Subtle specular sheen on upper edges (moonlight / sunlight graze)
+    vec3 halfVec = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfVec), 0.0), 24.0) * 0.18;
+    tone = mix(tone, uRimHighlight, spec * (1.0 - uDarkBias));
 
-    // Sumi-e Dark Ink Silhouette Edge (Fresnel contour darkening on grazing angles)
+    // Fine Calligraphic Ink Edge Contour (Fresnel silhouette darkening)
     float NdotV = abs(dot(normal, viewDir));
-    float edgeNoise = (noise(vWorldPosition.xy * 6.0) - 0.5) * 0.14;
-    float inkEdge = 1.0 - smoothstep(0.18, 0.42 + edgeNoise, NdotV);
-    vec3 finalColor = mix(tone, uInkDark, inkEdge * uInkContourStrength);
+    float brushWobble = (fbm(vWorldPosition.xy * 3.0) - 0.5) * 0.08;
+    float inkEdge = 1.0 - smoothstep(0.12, 0.32 + brushWobble, NdotV);
+    vec3 finalColor = mix(tone, uInkDark, inkEdge * uInkContourStrength * 0.85);
 
-    // Top-facing snow/paper highlight on sharp upward ledges
-    if (worldNormal.y > 0.72) {
-      float topWash = smoothstep(0.72, 0.95, worldNormal.y) * 0.35;
-      finalColor = mix(finalColor, uRimHighlight, topWash * (1.0 - uDarkBias));
+    // Top-ledge paper highlight
+    if (worldNormal.y > 0.75) {
+      float topLight = smoothstep(0.75, 0.98, worldNormal.y) * 0.25;
+      finalColor = mix(finalColor, uRimHighlight, topLight * (1.0 - uDarkBias));
     }
 
     // Vermilion Seal Accent
     if (uHasRedSeal > 0.5) {
-      float pulse = 0.82 + 0.18 * sin(uSealPulse);
+      float pulse = 0.84 + 0.16 * sin(uSealPulse);
       finalColor = mix(finalColor, uVermilion * pulse, 0.88);
     }
 
-    // Subtle distance mist (only far depths, preserving foreground contrast)
-    float zDist = max(0.0, length(vViewPosition) - 26.0);
+    // Atmospheric Depth Mist
+    float zDist = max(0.0, length(vViewPosition) - 28.0);
     float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * zDist * zDist);
     finalColor = mix(finalColor, uFogColor, clamp(fogFactor, 0.0, 0.65));
 
@@ -136,22 +139,15 @@ const fragmentShader = /* glsl */ `
   }
 `;
 
-// Inverted-Hull Calligraphic Black Ink Outline Shader
+// Calligraphic Inverted-Hull Outline Shader (refined brush thickness)
 const outlineVertexShader = /* glsl */ `
   uniform float uOutlineThickness;
   varying vec3 vWorldPos;
 
-  float hash(vec2 p) {
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-  }
-
   void main() {
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
     vWorldPos = worldPos.xyz;
-    // Organic brush pressure variation along world position
-    float pressure = 0.75 + 0.5 * sin(worldPos.x * 3.7 + worldPos.y * 5.3);
+    float pressure = 0.8 + 0.35 * sin(worldPos.x * 2.9 + worldPos.y * 4.1);
     vec3 extruded = position + normalize(normal) * (uOutlineThickness * pressure);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(extruded, 1.0);
   }
@@ -159,8 +155,6 @@ const outlineVertexShader = /* glsl */ `
 
 const outlineFragmentShader = /* glsl */ `
   uniform vec3 uOutlineColor;
-  varying vec3 vWorldPos;
-
   void main() {
     gl_FragColor = vec4(uOutlineColor, 1.0);
   }
@@ -174,12 +168,12 @@ export function createSumieMaterial(options = {}) {
     parchment: CONFIG.PALETTE.parchment,
     rimHighlight: CONFIG.PALETTE.rimHighlight,
     vermilion: CONFIG.PALETTE.vermilion,
-    lightDirection: new THREE.Vector3(0.4, 0.85, 0.55).normalize(),
+    lightDirection: new THREE.Vector3(0.45, 0.82, 0.62).normalize(),
     hasRedSeal: 0.0,
-    noiseScale: 3.5,
-    fogDensity: 0.0045,
+    noiseScale: 1.8,
+    fogDensity: 0.004,
     fogColor: new THREE.Color(CONFIG.PALETTE.parchment),
-    inkContourStrength: 0.85,
+    inkContourStrength: 0.75,
     darkBias: 0.0,
   };
 
@@ -207,7 +201,7 @@ export function createSumieMaterial(options = {}) {
   });
 }
 
-export function createInkOutlineMaterial(thickness = 0.038, color = 0x111110) {
+export function createInkOutlineMaterial(thickness = 0.024, color = 0x141413) {
   return new THREE.ShaderMaterial({
     vertexShader: outlineVertexShader,
     fragmentShader: outlineFragmentShader,
@@ -219,12 +213,9 @@ export function createInkOutlineMaterial(thickness = 0.038, color = 0x111110) {
   });
 }
 
-/**
- * Attaches an inverted-hull calligraphic black ink outline child mesh to any THREE.Mesh
- */
-export function addInkOutline(mesh, thickness = 0.038, color = 0x111110) {
+export function addInkOutline(mesh, thickness = 0.024, color = 0x141413) {
   if (!mesh || !mesh.geometry) return mesh;
-  const outlineMat = createInkOutlineMaterial(thickness, color);
+  const outlineMat = createInkOutlineMaterial(thickness * 0.65, color);
   const outlineMesh = new THREE.Mesh(mesh.geometry, outlineMat);
   outlineMesh.name = 'ink_outline';
   mesh.add(outlineMesh);

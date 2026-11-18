@@ -151,7 +151,7 @@ export class HUD {
     this.chapterBanner.appendChild(this.chapterTitleText);
     this.container.appendChild(this.chapterBanner);
 
-    // 5. Subtle Bottom-Left Controls Guide Bar
+    // 5. Subtle Bottom-Left Controls & Innovations Guide Bar
     this.controlsHint = document.createElement('div');
     this.controlsHint.style.cssText = `
       position: absolute;
@@ -159,14 +159,52 @@ export class HUD {
       left: 24px;
       font-size: 11px;
       color: #2b2926;
-      background: rgba(234, 229, 217, 0.78);
+      background: rgba(234, 229, 217, 0.85);
       border-left: 3px solid #b8292f;
       padding: 6px 12px;
-      letter-spacing: 0.7px;
+      letter-spacing: 0.6px;
       font-weight: 600;
     `;
-    this.controlsHint.innerHTML = `<b>A/D</b> Move &nbsp;·&nbsp; <b>SPACE</b> Jump/Wall-Jump &nbsp;·&nbsp; <b>J / Click</b> Katana &nbsp;·&nbsp; <b>K / R-Click</b> Parry &nbsp;·&nbsp; <b>L / Shift</b> Ink Dash`;
+    this.controlsHint.innerHTML = `<b>A/D</b> Move &nbsp;·&nbsp; <b>SPACE</b> Jump &nbsp;·&nbsp; <b>J/Click</b> Katana &nbsp;·&nbsp; <b>K/R-Click</b> Parry &nbsp;·&nbsp; <b>L/Shift</b> Dash &nbsp;·&nbsp; <span style="color:#b8292f;"><b>E</b> Paint Ink Bridge &nbsp;·&nbsp; <b>F</b> Bell Wave &nbsp;·&nbsp; <b>V</b> 3D Camera</span>`;
     this.container.appendChild(this.controlsHint);
+
+    // 5b. Bottom-Right Interactive Innovation Toolbar
+    this.powerBar = document.createElement('div');
+    this.powerBar.style.cssText = `
+      position: absolute;
+      bottom: 14px;
+      right: 24px;
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+    `;
+
+    const makePowerBtn = (label, keyCode) => {
+      const b = document.createElement('button');
+      b.innerHTML = label;
+      b.style.cssText = `
+        background: #141413;
+        color: #f5f1e6;
+        border: 1px solid #b8292f;
+        padding: 6px 11px;
+        font-family: 'Cinzel', serif;
+        font-size: 10.5px;
+        font-weight: 700;
+        cursor: pointer;
+        border-radius: 3px;
+        box-shadow: 0 2px 6px rgba(20,20,19,0.25);
+      `;
+      b.addEventListener('click', () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { code: keyCode }));
+        b.blur();
+      });
+      this.powerBar.appendChild(b);
+    };
+
+    makePowerBtn('🖌️ Paint Bridge [E]', 'KeyE');
+    makePowerBtn('🔔 Bell Wave [F]', 'KeyF');
+    makePowerBtn('🎥 3D Perspective [V]', 'KeyV');
+    this.container.appendChild(this.powerBar);
 
     // 6. Boss Health Bar (Bottom Center)
     this.bossBarContainer = document.createElement('div');

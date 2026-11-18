@@ -33,6 +33,8 @@ export class Level1 {
     this.bridge = null;
     this.boss = null;
     this.templeBell = null;
+    this.paintedBridges = [];
+    this.bellRings = [];
 
     // Shared Sumi-e Materials for Stone, Cliff Rock, Dark Wood & Pine Foliage
     this.stoneMat = createSumieMaterial({
@@ -208,19 +210,29 @@ export class Level1 {
             }
           }
 
-          // Stepped Carved Stone Masonry Courses underneath the platform (like traversal_steps.jpg)
+          // Organic Multi-Faceted Rocky Cliff Outcrops & Stepped Masonry Courses underneath the platform
           if (s.h <= 4.5) {
-            const tier1Geo = new THREE.BoxGeometry(s.w * 0.86, 0.85, 2.5);
+            const tier1Geo = new THREE.BoxGeometry(s.w * 0.90, 0.72, 2.7);
             const tier1 = new THREE.Mesh(tier1Geo, this.stoneMat);
-            tier1.position.set(0, -s.h * 0.5 - 0.42, -0.1);
-            addInkOutline(tier1, 0.04);
+            tier1.position.set(0, -s.h * 0.5 - 0.36, -0.05);
+            addInkOutline(tier1, 0.032);
             group.add(tier1);
 
-            const tier2Geo = new THREE.BoxGeometry(s.w * 0.66, 0.85, 2.1);
-            const tier2 = new THREE.Mesh(tier2Geo, this.cliffMat);
-            tier2.position.set(0, -s.h * 0.5 - 1.25, -0.2);
-            addInkOutline(tier2, 0.04);
-            group.add(tier2);
+            // Craggy Multi-Faceted Rock Boulders forming the natural cliff underside
+            const rockCount = Math.min(14, Math.max(3, Math.floor(s.w / 2.6)));
+            const stepW = (s.w * 0.82) / rockCount;
+            for (let r = 0; r < rockCount; r++) {
+              const rx = -s.w * 0.41 + stepW * (r + 0.5);
+              const distFromCenter = 1.0 - Math.abs(rx) / (s.w * 0.5);
+              const rockRadius = 0.85 + distFromCenter * 0.85 + ((r * 11) % 3) * 0.18;
+              const rockGeo = new THREE.DodecahedronGeometry(rockRadius, 0);
+              const rock = new THREE.Mesh(rockGeo, this.cliffMat);
+              rock.position.set(rx, -s.h * 0.5 - 0.85 - distFromCenter * 0.55, ((r % 2) - 0.5) * 0.3);
+              rock.scale.set(1.35, 0.95, 1.05);
+              rock.rotation.set(r * 0.7, r * 1.1, r * 0.4);
+              addInkOutline(rock, 0.035);
+              group.add(rock);
+            }
           }
         }
 
@@ -261,50 +273,73 @@ export class Level1 {
     }
   }
 
-  // --- Gnarled Japanese Bonsai / Mountain Pine Tree Generator ---
+  // --- Organic Gnarled Japanese Bonsai / Mountain Pine Tree Generator ---
   buildPineTree(x, y, z = -1.8, scale = 1.0, lean = 1) {
     const pine = new THREE.Group();
     pine.position.set(x, y, z);
     pine.scale.set(scale, scale, scale);
 
-    // Gnarled Twisted Trunk Segments
-    const seg1Geo = new THREE.CylinderGeometry(0.24, 0.38, 2.2, 7);
-    const seg1 = new THREE.Mesh(seg1Geo, this.woodMat);
-    seg1.position.set(0, 1.0, 0);
-    seg1.rotation.z = -lean * 0.22;
-    addInkOutline(seg1, 0.04);
-    pine.add(seg1);
+    // 1. Curved Gnarled Main Trunk (CatmullRomCurve3 + TubeGeometry)
+    const trunkCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(lean * 0.25, 1.15, 0.08),
+      new THREE.Vector3(lean * 0.85, 2.35, -0.10),
+      new THREE.Vector3(lean * 1.45, 3.45, 0.05),
+      new THREE.Vector3(lean * 1.15, 4.35, 0),
+    ]);
+    const trunkGeo = new THREE.TubeGeometry(trunkCurve, 14, 0.22, 7, false);
+    const trunkMesh = new THREE.Mesh(trunkGeo, this.woodMat);
+    addInkOutline(trunkMesh, 0.032);
+    pine.add(trunkMesh);
 
-    const seg2Geo = new THREE.CylinderGeometry(0.16, 0.24, 2.0, 7);
-    const seg2 = new THREE.Mesh(seg2Geo, this.woodMat);
-    seg2.position.set(lean * 0.65, 2.6, 0);
-    seg2.rotation.z = -lean * 0.48;
-    addInkOutline(seg2, 0.038);
-    pine.add(seg2);
+    // Flared Root Base Gripping the Stone
+    const rootBaseGeo = new THREE.ConeGeometry(0.45, 0.75, 7);
+    const rootBase = new THREE.Mesh(rootBaseGeo, this.woodMat);
+    rootBase.position.set(0, 0.3, 0);
+    addInkOutline(rootBase, 0.032);
+    pine.add(rootBase);
 
-    const seg3Geo = new THREE.CylinderGeometry(0.10, 0.16, 1.6, 6);
-    const seg3 = new THREE.Mesh(seg3Geo, this.woodMat);
-    seg3.position.set(lean * 1.45, 3.85, 0);
-    seg3.rotation.z = -lean * 0.25;
-    addInkOutline(seg3, 0.035);
-    pine.add(seg3);
-
-    // Layered Sumi-e Pine Needle Canopy Pads
-    const padCoords = [
-      { x: lean * 0.4,  y: 2.3, rx: 1.35, ry: 0.42 },
-      { x: lean * 1.3,  y: 3.2, rx: 1.65, ry: 0.48 },
-      { x: lean * 2.1,  y: 3.9, rx: 1.40, ry: 0.44 },
-      { x: lean * 1.1,  y: 4.6, rx: 1.80, ry: 0.52 },
-      { x: -lean * 0.4, y: 3.5, rx: 1.15, ry: 0.38 },
+    // 2. Reaching Gnarled Secondary Branches
+    const branches = [
+      [new THREE.Vector3(lean * 0.35, 1.6, 0), new THREE.Vector3(lean * 1.35, 1.95, 0.15), new THREE.Vector3(lean * 2.15, 2.15, 0.1)],
+      [new THREE.Vector3(lean * 0.75, 2.3, 0), new THREE.Vector3(-lean * 0.25, 2.75, -0.15), new THREE.Vector3(-lean * 0.95, 3.05, 0)],
+      [new THREE.Vector3(lean * 1.25, 3.1, 0), new THREE.Vector3(lean * 2.15, 3.45, -0.1), new THREE.Vector3(lean * 2.75, 3.65, 0.05)],
     ];
 
-    for (const p of padCoords) {
-      const padGeo = new THREE.SphereGeometry(1.0, 10, 8);
-      padGeo.scale(p.rx, p.ry, 0.85);
-      const pad = new THREE.Mesh(padGeo, this.pineFoliageMat);
-      pad.position.set(p.x, p.y, 0.1);
-      addInkOutline(pad, 0.042);
-      pine.add(pad);
+    for (const bPts of branches) {
+      const bCurve = new THREE.CatmullRomCurve3(bPts);
+      const bGeo = new THREE.TubeGeometry(bCurve, 8, 0.11, 6, false);
+      const bMesh = new THREE.Mesh(bGeo, this.woodMat);
+      addInkOutline(bMesh, 0.025);
+      pine.add(bMesh);
+    }
+
+    // 3. Organic Multi-Faceted Sumi-e Pine Needle Clusters (Replacing smooth oval spheres!)
+    const canopyCenters = [
+      { x: lean * 2.1,  y: 2.2,  z: 0.1,  r: 0.65, count: 5 },
+      { x: -lean * 0.9, y: 3.1,  z: 0.0,  r: 0.62, count: 5 },
+      { x: lean * 2.7,  y: 3.7,  z: 0.05, r: 0.68, count: 5 },
+      { x: lean * 1.2,  y: 4.45, z: 0.0,  r: 0.82, count: 7 },
+    ];
+
+    for (const c of canopyCenters) {
+      for (let i = 0; i < c.count; i++) {
+        const angle = (i / c.count) * Math.PI * 2;
+        const dist = i === 0 ? 0 : c.r * 0.62;
+        const ox = c.x + Math.cos(angle) * dist;
+        const oy = c.y + Math.sin(angle) * (dist * 0.28) + (i === 0 ? 0.14 : 0);
+        const oz = c.z + Math.sin(angle) * 0.22;
+
+        // Faceted low-poly icosahedron cloud tuft flattened horizontally like real bonsai needle pads
+        const tuftRadius = c.r * (i === 0 ? 0.85 : 0.62);
+        const tuftGeo = new THREE.IcosahedronGeometry(tuftRadius, 1);
+        tuftGeo.scale(1.35, 0.42, 0.95);
+        const tuft = new THREE.Mesh(tuftGeo, this.pineFoliageMat);
+        tuft.position.set(ox, oy, oz);
+        tuft.rotation.y = i * 0.9;
+        addInkOutline(tuft, 0.028);
+        pine.add(tuft);
+      }
     }
 
     this.scene.add(pine);
@@ -556,6 +591,115 @@ export class Level1 {
     this.scene.add(this.scrollGroup);
   }
 
+  // --- INNOVATION 1: Interactive "Living Brushstroke" Ink Bridge (Press E or Click Canvas) ---
+  paintInkBridge(x, y, facing = 1) {
+    // Limit active painted bridges to 3 (remove oldest if exceeded)
+    if (this.paintedBridges.length >= 3) {
+      const oldest = this.paintedBridges.shift();
+      this.collision.removeSolid(oldest.solidRef);
+      this.scene.remove(oldest.group);
+    }
+
+    const w = 4.6;
+    const h = 0.44;
+    const bx = x + facing * 2.5;
+    const by = y - 0.55;
+
+    const box = new AABB(bx, by, w, h);
+    const solidRef = this.collision.addSolid(box, { runnable: false, crumbling: false });
+
+    const group = new THREE.Group();
+    group.position.set(bx, by, 0);
+
+    // Sculpted Calligraphic Sumi-e Brush-Stroke Ribbon Platform
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-w * 0.5, -0.05, 0),
+      new THREE.Vector3(-w * 0.2, 0.08, 0.06),
+      new THREE.Vector3(w * 0.2, -0.04, -0.06),
+      new THREE.Vector3(w * 0.5, 0.06, 0),
+    ]);
+    const strokeGeo = new THREE.TubeGeometry(curve, 16, 0.26, 8, false);
+    strokeGeo.scale(1.0, 0.72, 3.8);
+    const strokeMesh = new THREE.Mesh(strokeGeo, this.cliffMat);
+    addInkOutline(strokeMesh, 0.035);
+    group.add(strokeMesh);
+
+    // Glowing Vermilion Artist Hanko Seal Stamp at the tip of the brushstroke
+    const sealGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
+    const sealMat = new THREE.MeshBasicMaterial({ color: 0xb8292f });
+    const sealMesh = new THREE.Mesh(sealGeo, sealMat);
+    sealMesh.position.set(facing * (w * 0.46), 0.14, 0.65);
+    group.add(sealMesh);
+
+    if (this.inkSplash) {
+      this.inkSplash.spawnHitImpact(bx, by, facing, 14, true);
+    }
+
+    this.scene.add(group);
+    this.paintedBridges.push({
+      group,
+      solidRef,
+      timer: 7.5,
+      maxTime: 7.5,
+      x: bx,
+      y: by,
+    });
+  }
+
+  // --- INNOVATION 2: Resonant Bell Acoustic Sumi-e Soundwave (Press F) ---
+  triggerBellResonance(player) {
+    const px = player ? player.aabb.x : 183.0;
+    const py = player ? player.aabb.y : 23.0;
+
+    // Swing the Temple Bell vigorously if nearby
+    if (this.templeBell) {
+      this.templeBell.rotation.z = 0.45;
+    }
+
+    // Create expanding concentric calligraphic soundwave rings
+    const ringGroup = new THREE.Group();
+    ringGroup.position.set(px, py, 0.4);
+
+    const r1Geo = new THREE.RingGeometry(0.85, 1.05, 36);
+    const r1Mat = new THREE.MeshBasicMaterial({
+      color: 0xb8292f,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const r2Geo = new THREE.RingGeometry(0.55, 0.68, 36);
+    const r2Mat = new THREE.MeshBasicMaterial({
+      color: 0x141413,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    });
+
+    ringGroup.add(new THREE.Mesh(r1Geo, r1Mat));
+    ringGroup.add(new THREE.Mesh(r2Geo, r2Mat));
+    this.scene.add(ringGroup);
+
+    this.bellRings.push({
+      group: ringGroup,
+      r1Mat,
+      r2Mat,
+      timer: 0.75,
+      maxTime: 0.75,
+    });
+
+    // Stagger all nearby enemies within 15 units & refresh player air dash!
+    if (player) {
+      player.hasAirDash = true;
+    }
+    for (const e of this.enemies) {
+      if (!e.isDead && Math.hypot(e.aabb.x - px, e.aabb.y - py) < 15.0) {
+        if (typeof e.onParried === 'function') {
+          e.onParried(true);
+        }
+      }
+    }
+  }
+
   // --- Fixed Update (60 Hz) ---
   fixedUpdate(dt, player) {
     for (const item of this.solidMeshes) {
@@ -607,6 +751,35 @@ export class Level1 {
 
     if (this.templeBell) {
       this.templeBell.rotation.z = Math.sin(performance.now() * 0.0018) * 0.09;
+    }
+
+    // Update Living Brushstroke Ink Bridges
+    for (let i = this.paintedBridges.length - 1; i >= 0; i--) {
+      const br = this.paintedBridges[i];
+      br.timer -= dt;
+      if (br.timer < 1.2) {
+        br.group.scale.y = Math.max(0.1, br.timer / 1.2);
+      }
+      if (br.timer <= 0) {
+        this.collision.removeSolid(br.solidRef);
+        this.scene.remove(br.group);
+        this.paintedBridges.splice(i, 1);
+      }
+    }
+
+    // Update Resonant Bell Soundwave Rings
+    for (let i = this.bellRings.length - 1; i >= 0; i--) {
+      const ring = this.bellRings[i];
+      ring.timer -= dt;
+      const p = 1.0 - ring.timer / ring.maxTime;
+      const s = 1.0 + p * 12.0;
+      ring.group.scale.set(s, s, 1);
+      ring.r1Mat.opacity = Math.max(0, (1.0 - p) * 0.9);
+      ring.r2Mat.opacity = Math.max(0, (1.0 - p) * 0.85);
+      if (ring.timer <= 0) {
+        this.scene.remove(ring.group);
+        this.bellRings.splice(i, 1);
+      }
     }
 
     if (this.scrollGroup) {
