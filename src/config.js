@@ -8,28 +8,28 @@ export const CONFIG = {
   TIME_STEP: 1 / 60,       // 60 Hz fixed physics simulation
   MAX_DELTA: 0.1,          // Maximum delta clamped to prevent tunneling on lag spikes
 
-  // --- Palette & Sumi-e Colors (Strict) ---
+  // --- Palette & Sumi-e Colors (Sumiro Warm Antique Washi & Cool Slate Ink) ---
   PALETTE: {
-    inkDark:      '#141413', // Deepest sumi ink black
-    inkMid:       '#5c5b57', // Diluted mid ink wash
-    inkLight:     '#a8a59c', // Faint ink wash
-    parchment:    '#eae5d9', // Warm washi paper background
-    rimHighlight: '#f5f1e6', // White silk rim highlight
-    vermilion:    '#b8292f', // Seal red (strictly gameplay-critical only)
+    inkDark:      '#0e0d0a', // Deepest sumi pen-line ink black
+    inkMid:       '#454849', // Cool slate-charcoal mid wash
+    inkLight:     '#96968e', // Diluted stone ink wash
+    parchment:    '#c4b798', // Sumiro warm antique aged silk/washi paper
+    rimHighlight: '#dfd7c2', // Sunlit warm bare washi highlight
+    vermilion:    '#a8321f', // Traditional hanko seal vermilion
     goldAccent:   '#ffd43b', // Profile / moving element highlight
     darkSky:      '#171e2e', // Night / storm atmosphere
     sentryBlue:   '#4dabf7', // Wall slice blue indicator
   },
 
-  // --- 2.5D Camera ---
+  // --- Intimate 3D / 2.5D Sumiro Camera ---
   CAMERA: {
-    fov: 38,                 // Flat, painted look (35-40 deg)
-    distanceZ: 22,           // Units back on +Z
-    tiltDeg: 7,              // Downward pitch angle
-    horizontalDeadzone: 2.0, // Dead-zone before camera pans horizontally
-    lookAhead: 2.5,          // Look-ahead distance in facing direction
+    fov: 40,                 // Sumiro 40-deg lens
+    distanceZ: 12.2,         // Intimate third-person framing so Kuro & Voronoi stone steps fill the frame
+    tiltDeg: 7.5,            // Slight downward pitch angle
+    horizontalDeadzone: 1.4, // Dead-zone before camera pans horizontally
+    lookAhead: 1.8,          // Look-ahead distance in facing direction
     followSpeedX: 4.5,       // Smooth damping rate for X
-    followSpeedY: 3.5,       // Platformer vertical lock rate (smoother)
+    followSpeedY: 3.5,       // Platformer vertical lock rate
     shakeDecay: 8.0,         // Camera shake decay speed
   },
 

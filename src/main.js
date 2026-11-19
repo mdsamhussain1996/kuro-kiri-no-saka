@@ -15,6 +15,7 @@ import { InkRippleManager } from './fx/InkRipple.js';
 import { InkSplashManager } from './fx/InkFX.js';
 import { RainSystem } from './fx/Rain.js';
 import { InkPetalSystem } from './fx/InkPetals.js';
+import { InkCrowFlock } from './fx/InkCrows.js';
 import { ParallaxBackground } from './level/Parallax.js';
 import { PostProcessingSystem } from './render/PostFX.js';
 import { Level1 } from './level/Level1.js';
@@ -79,6 +80,7 @@ const ripples = new InkRippleManager(scene);
 const inkSplash = new InkSplashManager(scene);
 const rain = new RainSystem(scene);
 const petals = new InkPetalSystem(scene);
+const crows = new InkCrowFlock(scene);
 const parallax = new ParallaxBackground(scene);
 const postFX = new PostProcessingSystem(renderer, scene, camera);
 const audioEngine = new SoundEngine();
@@ -211,6 +213,7 @@ function onFixedUpdate(dt) {
 
   rain.update(dt, player.aabb.x, player.aabb.y);
   petals.update(dt, player.aabb.x, player.aabb.y);
+  crows.update(dt, player.aabb.x, player.aabb.y);
   audioEngine.update(dt, player.aabb.x);
   hud.update(player);
 

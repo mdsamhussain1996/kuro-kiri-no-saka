@@ -8,12 +8,13 @@ export class InkPetalSystem {
     this.scene = scene;
     this.petalCount = 65;
 
-    const geo = new THREE.PlaneGeometry(0.18, 0.28);
+    const geo = new THREE.CircleGeometry(0.055, 5);
+    geo.scale(0.55, 1.45, 1.0);
     const mat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.65,
       depthWrite: false,
     });
 

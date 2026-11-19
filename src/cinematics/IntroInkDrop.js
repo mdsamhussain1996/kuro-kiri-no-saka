@@ -19,13 +19,14 @@ export class IntroInkDrop {
       left: 0;
       width: 100%;
       height: 100%;
-      background: #eae5d9;
+      background: radial-gradient(circle at center, #d8ccb2 0%, #c4b798 65%, #a39374 100%);
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
       z-index: 50;
-      font-family: 'Cinzel', serif;
+      font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+      font-style: italic;
       transition: opacity 1.2s ease-out;
       pointer-events: auto;
     `;

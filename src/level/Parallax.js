@@ -13,12 +13,12 @@ export class ParallaxBackground {
 
     const parchmentColor = new THREE.Color(CONFIG.PALETTE.parchment);
 
-    // 4 Layers of 3D Multi-Faceted Shan-Shui Mountain Ranges
+    // 4 Layers of 3D Multi-Faceted Shan-Shui Mountain Ranges (Cool Slate Shadow vs Warm Silk Sunlit Slopes)
     const layerConfigs = [
-      { depth: -92, factor: 0.05, litColor: '#b5b0a3', shadowColor: '#7d7970', ridgeColor: '#5e5b54', peaks: 14, amp: 26, baseY: -3, seed: 17 },
-      { depth: -64, factor: 0.10, litColor: '#999488', shadowColor: '#59564f', ridgeColor: '#3d3b36', peaks: 18, amp: 21, baseY: -5, seed: 31 },
-      { depth: -38, factor: 0.16, litColor: '#7a766c', shadowColor: '#383631', ridgeColor: '#22211e', peaks: 22, amp: 16, baseY: -6, seed: 53 },
-      { depth: -20, factor: 0.24, litColor: '#5c5951', shadowColor: '#21201d', ridgeColor: '#141413', peaks: 26, amp: 11, baseY: -7, seed: 79 },
+      { depth: -92, factor: 0.05, litColor: '#b3a890', shadowColor: '#676b6c', ridgeColor: '#474c4f', peaks: 14, amp: 26, baseY: -3, seed: 17 },
+      { depth: -64, factor: 0.10, litColor: '#9c927d', shadowColor: '#484f54', ridgeColor: '#2e3438', peaks: 18, amp: 21, baseY: -5, seed: 31 },
+      { depth: -38, factor: 0.16, litColor: '#827a68', shadowColor: '#2d3439', ridgeColor: '#1b2024', peaks: 22, amp: 16, baseY: -6, seed: 53 },
+      { depth: -20, factor: 0.24, litColor: '#696356', shadowColor: '#1a2024', ridgeColor: '#0e1114', peaks: 26, amp: 11, baseY: -7, seed: 79 },
     ];
 
     layerConfigs.forEach((cfg) => {
@@ -191,17 +191,17 @@ export class ParallaxBackground {
   buildDriftingMistClouds() {
     if (typeof document === 'undefined') return;
 
-    // Soft radial sumi-e mist puff texture
+    // Soft radial sumi-e mist puff texture (256x256 square so radial gradient reaches 0 alpha before edges)
     const canvas = document.createElement('canvas');
     canvas.width = 256;
-    canvas.height = 128;
+    canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    const grad = ctx.createRadialGradient(128, 64, 10, 128, 64, 115);
-    grad.addColorStop(0.0, 'rgba(234, 229, 217, 0.82)');
-    grad.addColorStop(0.55, 'rgba(234, 229, 217, 0.42)');
-    grad.addColorStop(1.0, 'rgba(234, 229, 217, 0.0)');
+    const grad = ctx.createRadialGradient(128, 128, 8, 128, 128, 120);
+    grad.addColorStop(0.0, 'rgba(198, 190, 173, 0.72)');
+    grad.addColorStop(0.55, 'rgba(186, 182, 170, 0.32)');
+    grad.addColorStop(1.0, 'rgba(196, 183, 152, 0.0)');
     ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillRect(0, 0, 256, 256);
 
     const tex = new THREE.CanvasTexture(canvas);
     const cloudMat = new THREE.MeshBasicMaterial({

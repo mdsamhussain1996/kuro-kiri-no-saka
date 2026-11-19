@@ -1,6 +1,8 @@
-// Spring-Damped Third-Person Camera Rig
-// Supports 2.5D Scroll View, 3D Over-Shoulder Cinema View, 3D Close Action Cam,
-// mouse-look orbit option, and automatic wide-angle Boss Arena framing across Acts I, II, and III.
+// Spring-Damped Third-Person Camera Rig (Sumiro Intimate 3D Framing + Wide Boss Arena Framing)
+// Mode 0 (Default): Sumiro Intimate 3D Oblique Scroll Follow (close framing showing 3D cliff depth & Voronoi stairs)
+// Mode 1: 3D Over-Shoulder Cinema View
+// Mode 2: Wide Panoramic Scroll View
+// Also supports mouse-look orbit (Alt+Drag or Middle-Mouse Drag).
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
@@ -9,8 +11,8 @@ import { events } from './EventBus.js';
 export class CameraRig {
   constructor(camera, initialMode = 0) {
     this.camera = camera;
-    this.mode = initialMode; // 0 = 2.5D Scroll, 1 = 3D Cinema Over-Shoulder, 2 = 3D Close Action
-    this.targetCameraY = 4.5;
+    this.mode = initialMode;
+    this.targetCameraY = 3.6;
     this.shakeAmount = 0;
 
     // Mouse-look orbit offsets
@@ -57,27 +59,29 @@ export class CameraRig {
 
   snapTo(x, y) {
     const bossArena = this.getBossArenaFraming(x);
-    if (bossArena && this.mode === 0) {
+    if (bossArena && this.mode !== 1) {
       this.targetCameraY = bossArena.y;
       this.camera.position.set(bossArena.x, bossArena.y, bossArena.z);
+      this.camera.rotation.set(-THREE.MathUtils.degToRad(CONFIG.CAMERA.tiltDeg), 0, 0);
     } else {
-      this.targetCameraY = y + 2.5;
-      this.camera.position.set(x, this.targetCameraY, CONFIG.CAMERA.distanceZ);
+      this.targetCameraY = y + 1.95;
+      this.camera.position.set(x + 0.6, this.targetCameraY, CONFIG.CAMERA.distanceZ);
+      this.camera.rotation.set(-THREE.MathUtils.degToRad(CONFIG.CAMERA.tiltDeg), -0.13, 0);
     }
   }
 
   getBossArenaFraming(px) {
     // Act I Boss Arena: Kurogane, the Gatekeeper
     if (px >= 244 && px <= 292) {
-      return { x: 259.0, y: 53.5, z: 27.5 };
+      return { x: 259.0, y: 53.2, z: 26.5 };
     }
     // Act II Boss Arena: Lady Shirayuki, the Mist Weaver
     if (px >= 502 && px <= 558) {
-      return { x: 525.0, y: 78.5, z: 27.5 };
+      return { x: 525.0, y: 78.2, z: 26.5 };
     }
     // Act III Final Boss Arena: Lord Sumi-Ou, Warlord of the Iron Brush
     if (px >= 774 && px <= 845) {
-      return { x: 800.0, y: 102.5, z: 28.5 };
+      return { x: 800.0, y: 102.2, z: 27.5 };
     }
     return null;
   }
@@ -88,7 +92,10 @@ export class CameraRig {
     if (bossArena) {
       this.targetCameraY = bossArena.y;
     } else if (player.coyoteTimer > 0) {
-      this.targetCameraY = player.aabb.y + 2.5;
+      this.targetCameraY = player.aabb.y + 1.95;
+    } else {
+      // Gentle vertical follow while airborne so high jumps stay framed
+      this.targetCameraY += (player.aabb.y + 1.95 - this.targetCameraY) * 0.08;
     }
 
     if (!this.isOrbitDragging) {
@@ -104,7 +111,7 @@ export class CameraRig {
     const py = player.aabb.y;
     const bossArena = this.getBossArenaFraming(px);
 
-    if (bossArena && this.mode === 0) {
+    if (bossArena && this.mode !== 1) {
       // Wide-angle Boss Arena Framing
       this.camera.position.x += (bossArena.x - this.camera.position.x) * 0.08;
       this.camera.position.y += (bossArena.y - this.camera.position.y) * 0.08;
@@ -112,35 +119,32 @@ export class CameraRig {
       this.camera.rotation.y += (this.orbitYaw - this.camera.rotation.y) * 0.08;
       this.camera.rotation.x += (-THREE.MathUtils.degToRad(CONFIG.CAMERA.tiltDeg) + this.orbitPitch - this.camera.rotation.x) * 0.08;
     } else if (this.mode === 1) {
-      // 3D Over-Shoulder Cinema Perspective
-      const targetCamX = px - player.facing * 4.2;
-      const targetCamY = py + 3.2;
-      const targetCamZ = 14.5;
-      this.camera.position.x += (targetCamX - this.camera.position.x) * 0.08;
-      this.camera.position.y += (targetCamY - this.camera.position.y) * 0.08;
-      this.camera.position.z += (targetCamZ - this.camera.position.z) * 0.08;
-      this.camera.rotation.y += (-player.facing * 0.34 + this.orbitYaw - this.camera.rotation.y) * 0.08;
-      this.camera.rotation.x += (-0.12 + this.orbitPitch - this.camera.rotation.x) * 0.08;
-    } else if (this.mode === 2) {
-      // 3D Close Action Combat Cam
-      const targetCamX = px + player.facing * 1.4;
-      const targetCamY = py + 1.6;
-      const targetCamZ = 14.0;
+      // 3D Over-Shoulder Cinema Perspective (Sumiro close shoulder angle)
+      const targetCamX = px - player.facing * 3.1;
+      const targetCamY = py + 2.1;
+      const targetCamZ = 9.4;
       this.camera.position.x += (targetCamX - this.camera.position.x) * 0.09;
-      this.camera.position.y += (targetCamY - this.camera.position.y) * 0.08;
-      this.camera.position.z += (targetCamZ - this.camera.position.z) * 0.08;
+      this.camera.position.y += (targetCamY - this.camera.position.y) * 0.09;
+      this.camera.position.z += (targetCamZ - this.camera.position.z) * 0.09;
+      this.camera.rotation.y += (-player.facing * 0.34 + this.orbitYaw - this.camera.rotation.y) * 0.09;
+      this.camera.rotation.x += (-0.11 + this.orbitPitch - this.camera.rotation.x) * 0.09;
+    } else if (this.mode === 2) {
+      // Wide Panoramic 2.5D Scroll View
+      const targetCamX = px + player.facing * 2.2;
+      this.camera.position.x += (targetCamX - this.camera.position.x) * 0.08;
+      this.camera.position.y += (py + 2.8 - this.camera.position.y) * 0.07;
+      this.camera.position.z += (20.5 - this.camera.position.z) * 0.08;
       this.camera.rotation.y += (this.orbitYaw - this.camera.rotation.y) * 0.08;
-      this.camera.rotation.x += (-0.06 + this.orbitPitch - this.camera.rotation.x) * 0.08;
+      this.camera.rotation.x += (-THREE.MathUtils.degToRad(CONFIG.CAMERA.tiltDeg) + this.orbitPitch - this.camera.rotation.x) * 0.08;
     } else {
-      // Standard 2.5D Painted Scroll Follow Camera
-      const targetCamX = px + player.facing * CONFIG.CAMERA.lookAhead;
-      const dx = targetCamX - this.camera.position.x;
-      if (Math.abs(dx) > CONFIG.CAMERA.horizontalDeadzone) {
-        this.camera.position.x += (targetCamX - this.camera.position.x) * 0.08;
-      }
-      this.camera.position.y += (this.targetCameraY - this.camera.position.y) * 0.05;
-      this.camera.position.z += (CONFIG.CAMERA.distanceZ - this.camera.position.z) * 0.08;
-      this.camera.rotation.y += (this.orbitYaw - this.camera.rotation.y) * 0.08;
+      // Mode 0 (Default): Sumiro Intimate 3D Oblique Follow Camera
+      const targetCamX = px - player.facing * 0.85 + CONFIG.CAMERA.lookAhead * player.facing * 0.45;
+      this.camera.position.x += (targetCamX - this.camera.position.x) * 0.09;
+      this.camera.position.y += (this.targetCameraY - this.camera.position.y) * 0.08;
+      this.camera.position.z += (CONFIG.CAMERA.distanceZ - this.camera.position.z) * 0.09;
+      // Subtle 3D oblique yaw so the camera looks along the stone stairs and cliffs
+      const targetYaw = -player.facing * 0.13 + this.orbitYaw;
+      this.camera.rotation.y += (targetYaw - this.camera.rotation.y) * 0.08;
       this.camera.rotation.x += (-THREE.MathUtils.degToRad(CONFIG.CAMERA.tiltDeg) + this.orbitPitch - this.camera.rotation.x) * 0.08;
     }
 
