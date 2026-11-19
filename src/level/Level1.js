@@ -13,8 +13,19 @@ import { InkShrine } from './InkShrine.js';
 import { LanternCheckpoint } from './LanternCheckpoint.js';
 import { AshigaruSentry } from '../enemies/AshigaruSentry.js';
 import { InkWingTengu } from '../enemies/InkWingTengu.js';
+import { ShadowArcher } from '../enemies/ShadowArcher.js';
+import { IronBrushJuggernaut } from '../enemies/IronBrushJuggernaut.js';
+import { ProjectileManager } from '../physics/ProjectileManager.js';
 import { InkShockwaveManager } from '../boss/InkShockwave.js';
 import { Kurogane } from '../boss/Kurogane.js';
+import { LadyShirayuki } from '../boss/LadyShirayuki.js';
+import { LordSumiOu } from '../boss/LordSumiOu.js';
+import {
+  CAMPAIGN_ACTS_DATA,
+  buildPagodaTower,
+  buildWeepingWillow,
+  buildIronForgeWheel,
+} from '../levels/CampaignLevels.js';
 import { createSumieMaterial, addInkOutline } from '../render/SumieMaterial.js';
 
 export class Level1 {
@@ -28,13 +39,18 @@ export class Level1 {
     this.bambooStalks = [];
     this.swingingLanterns = [];
     this.checkpoints = [];
+    this.campaignCheckpoints = [];
     this.enemies = [];
     this.shrine = null;
     this.bridge = null;
     this.boss = null;
+    this.bossShirayuki = null;
+    this.bossSumiOu = null;
     this.templeBell = null;
     this.paintedBridges = [];
     this.bellRings = [];
+    this.forgeWheels = [];
+    this.projectiles = new ProjectileManager(scene, inkSplash);
 
     // Shared Sumi-e Materials for Stone, Cliff Rock, Dark Wood & Pine Foliage
     this.stoneMat = createSumieMaterial({
@@ -146,7 +162,7 @@ export class Level1 {
     // 5. Populate Scenic Sumi-e Landmarks: Gnarled Pines, Temple of Silent Bells & Boss Cliffs
     this.buildScenicEnvironment();
 
-    // 6. Boss Kurogane (positioned in the moonlit Torii archway facing Kuro)
+    // 6. Boss 1: Kurogane (positioned in the moonlit Torii archway facing Kuro)
     this.boss = new Kurogane({
       scene: this.scene,
       collision: this.collision,
@@ -154,6 +170,152 @@ export class Level1 {
       shockwaves: this.shockwaves,
       x: data.act3.toriiGate.x + 3.2,
       y: data.act3.toriiGate.y,
+    });
+
+    // 7. Assemble Campaign Act II (Seijaku-no-Garan — The Silent Sanctuary) & Act III (Aka-no-Kajiya — The Crimson Foundry)
+    this.buildExtendedCampaignActs();
+  }
+
+  buildExtendedCampaignActs() {
+    const act2 = CAMPAIGN_ACTS_DATA.act2Sanctuary;
+    const act3 = CAMPAIGN_ACTS_DATA.act3Foundry;
+
+    // --- ACT II: Seijaku-no-Garan (The Silent Sanctuary) ---
+    this.buildSolids(act2.solids);
+    for (const l of act2.lanterns) {
+      this.swingingLanterns.push(new SwingingLantern({
+        scene: this.scene,
+        collision: this.collision,
+        pivotX: l.pivotX,
+        pivotY: l.pivotY,
+        ropeLength: l.ropeLength,
+      }));
+    }
+    for (const cp of act2.checkpoints) {
+      this.campaignCheckpoints.push(new LanternCheckpoint({
+        scene: this.scene,
+        collision: this.collision,
+        inkSplash: this.inkSplash,
+        x: cp.x,
+        y: cp.y,
+        id: cp.id,
+      }));
+    }
+    for (const a of act2.archers) {
+      this.enemies.push(new ShadowArcher({
+        scene: this.scene,
+        collision: this.collision,
+        inkSplash: this.inkSplash,
+        projectiles: this.projectiles,
+        x: a.x,
+        y: a.y,
+        facing: a.facing,
+      }));
+    }
+    for (const t of act2.tengus) {
+      this.enemies.push(new InkWingTengu({
+        scene: this.scene,
+        collision: this.collision,
+        inkSplash: this.inkSplash,
+        x: t.x,
+        y: t.y,
+      }));
+    }
+    for (const p of act2.pagodas) {
+      buildPagodaTower(this.scene, p.x, p.y, p.tiers, this.woodMat, this.cliffMat);
+    }
+    for (const w of act2.willows) {
+      buildWeepingWillow(this.scene, w.x, w.y, w.lean, this.woodMat, this.pineFoliageMat);
+    }
+
+    // Boss 2: Lady Shirayuki, the Mist Weaver
+    this.bossShirayuki = new LadyShirayuki({
+      scene: this.scene,
+      collision: this.collision,
+      inkSplash: this.inkSplash,
+      projectiles: this.projectiles,
+      x: act2.boss.x,
+      y: act2.boss.y,
+    });
+
+    // --- ACT III: Aka-no-Kajiya (The Crimson Foundry) ---
+    this.buildSolids(act3.solids);
+    for (const l of act3.lanterns) {
+      this.swingingLanterns.push(new SwingingLantern({
+        scene: this.scene,
+        collision: this.collision,
+        pivotX: l.pivotX,
+        pivotY: l.pivotY,
+        ropeLength: l.ropeLength,
+      }));
+    }
+    for (const cp of act3.checkpoints) {
+      this.campaignCheckpoints.push(new LanternCheckpoint({
+        scene: this.scene,
+        collision: this.collision,
+        inkSplash: this.inkSplash,
+        x: cp.x,
+        y: cp.y,
+        id: cp.id,
+      }));
+    }
+    for (const j of act3.juggernauts) {
+      this.enemies.push(new IronBrushJuggernaut({
+        scene: this.scene,
+        collision: this.collision,
+        inkSplash: this.inkSplash,
+        x: j.x,
+        y: j.y,
+        patrolMinX: j.patrolMinX,
+        patrolMaxX: j.patrolMaxX,
+      }));
+    }
+    for (const a of act3.archers) {
+      this.enemies.push(new ShadowArcher({
+        scene: this.scene,
+        collision: this.collision,
+        inkSplash: this.inkSplash,
+        projectiles: this.projectiles,
+        x: a.x,
+        y: a.y,
+        facing: a.facing,
+      }));
+    }
+    for (const t of act3.tengus) {
+      this.enemies.push(new InkWingTengu({
+        scene: this.scene,
+        collision: this.collision,
+        inkSplash: this.inkSplash,
+        x: t.x,
+        y: t.y,
+      }));
+    }
+    for (const fw of act3.forgeWheels) {
+      const wheelMesh = buildIronForgeWheel(this.scene, fw.x, fw.y, fw.radius, this.cliffMat);
+      this.forgeWheels.push({ mesh: wheelMesh, speed: fw.speed });
+    }
+
+    // Molten Vermilion Ink River glowing below Act III Crimson Foundry
+    const lavaGeo = new THREE.PlaneGeometry(310, 4.5);
+    const lavaMat = new THREE.MeshBasicMaterial({
+      color: 0xb8292f,
+      transparent: true,
+      opacity: 0.72,
+      fog: false,
+    });
+    const lavaMesh = new THREE.Mesh(lavaGeo, lavaMat);
+    lavaMesh.position.set(700, 68.5, -1.5);
+    this.scene.add(lavaMesh);
+
+    // Grand Foundry Torii & Boss 3: Lord Sumi-Ou, Warlord of the Iron Brush
+    this.buildToriiGate(800, 97.6);
+    this.bossSumiOu = new LordSumiOu({
+      scene: this.scene,
+      collision: this.collision,
+      inkSplash: this.inkSplash,
+      shockwaves: this.shockwaves,
+      x: act3.boss.x,
+      y: act3.boss.y,
     });
   }
 
@@ -730,6 +892,9 @@ export class Level1 {
     for (const cp of this.checkpoints) {
       cp.fixedUpdate(dt);
     }
+    for (const cp of this.campaignCheckpoints) {
+      cp.fixedUpdate(dt);
+    }
 
     for (const b of this.bambooStalks) {
       b.fixedUpdate(dt, player);
@@ -747,6 +912,24 @@ export class Level1 {
 
     if (this.boss) {
       this.boss.fixedUpdate(dt, player);
+    }
+    if (this.bossShirayuki) {
+      this.bossShirayuki.fixedUpdate(dt, player);
+    }
+    if (this.bossSumiOu) {
+      this.bossSumiOu.fixedUpdate(dt, player);
+    }
+    if (this.projectiles) {
+      this.projectiles.fixedUpdate(
+        dt,
+        player,
+        this.enemies,
+        [this.boss, this.bossShirayuki, this.bossSumiOu]
+      );
+    }
+
+    for (const fw of this.forgeWheels) {
+      fw.mesh.rotation.z += fw.speed * dt;
     }
 
     if (this.templeBell) {
@@ -797,6 +980,12 @@ export class Level1 {
     }
     if (this.boss) {
       this.boss.render(alpha);
+    }
+    if (this.bossShirayuki) {
+      this.bossShirayuki.render(alpha);
+    }
+    if (this.bossSumiOu) {
+      this.bossSumiOu.render(alpha);
     }
   }
 

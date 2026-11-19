@@ -289,23 +289,53 @@ export class AudioEngine {
     }
   }
 
+  // --- Bamboo Shakuhachi Flute Synthesis (Breath Noise + Vibrato Sine) ---
+  playBambooFlute(freq = 440.0, duration = 2.8) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    const now = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq * 0.98, now);
+    osc.frequency.exponentialRampToValueAtTime(freq, now + 0.25);
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = freq * 2.2;
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.001, now);
+    gain.gain.linearRampToValueAtTime(0.18, now + 0.45);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGain);
+
+    osc.start(now);
+    osc.stop(now + duration);
+  }
+
   // --- Ambient Music Updates ---
   update(dt, playerX) {
     if (!this.initialized) return;
 
-    // Adjust rain volume based on Act II proximity
+    // Adjust rain volume based on Act I Ravine proximity
     if (playerX >= 105 && playerX <= 232) {
       this.setRainIntensity(1.0);
     } else {
       this.setRainIntensity(0.0);
     }
 
-    // Sparse pentatonic shamisen phrases
+    // Sparse pentatonic shamisen & bamboo shakuhachi flute phrases
     this.ambientMelodyTimer -= dt;
     if (this.ambientMelodyTimer <= 0) {
-      this.ambientMelodyTimer = 7.0 + Math.random() * 8.0;
+      this.ambientMelodyTimer = 6.5 + Math.random() * 7.5;
       const note = this.shamisenScale[Math.floor(Math.random() * this.shamisenScale.length)];
       this.playShamisenPluck(note, 2.2, 0.65);
+      if (Math.random() > 0.45) {
+        setTimeout(() => this.playBambooFlute(note, 2.6), 450);
+      }
     }
   }
 
@@ -329,6 +359,18 @@ export class AudioEngine {
     });
     events.on('lightning_flash', () => {
       this.playNoiseBurst(0.8, 180, 0.85); // Thunder
+    });
+    events.on('lantern_grapple', () => {
+      this.playShamisenPluck(659.25, 1.8, 0.95); // Vermilion Grapple Chime
+    });
+    events.on('scroll_unlocked', () => {
+      this.playTaikoDrum(true);
+      setTimeout(() => this.playBambooFlute(523.25, 3.2), 250);
+    });
+    events.on('campaign_sunrise_victory', () => {
+      this.playTaikoDrum(true);
+      setTimeout(() => this.playShamisenPluck(523.25, 3.5, 1.0), 200);
+      setTimeout(() => this.playBambooFlute(659.25, 4.0), 500);
     });
 
     // Resume context on first user interaction

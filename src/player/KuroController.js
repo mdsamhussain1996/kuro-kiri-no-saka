@@ -35,11 +35,22 @@ export class KuroController {
     this.coyoteTimer = 0;
     this.isJumpingRise = false;
     this.hasAirDash = true;
+    this.hasDoubleJump = true;
     this.dashTimer = 0;
     this.dashCooldownTimer = 0;
     this.dashDirection = { x: 1, y: 0 };
     this.afterimageTimer = 0;
     this.hasInkStepUnlocked = true; // True for testing, can be locked/unlocked via shrine
+    this.scrollOfFlowUnlocked = false;
+    this.swingingLanternsRef = [];
+    this.targetGrappleLantern = null;
+
+    events.on('scroll_unlocked', ({ scrollId }) => {
+      if (scrollId >= 1) {
+        this.scrollOfFlowUnlocked = true;
+        this.hasInkStepUnlocked = true;
+      }
+    });
 
     // Wall & Ledge
     this.wallRunTimer = 0;
@@ -82,6 +93,7 @@ export class KuroController {
       enter: () => {
         this.isJumpingRise = false;
         this.hasAirDash = true;
+        this.hasDoubleJump = true;
       },
       fixedUpdate: (dt) => {
         this.applyGroundMovement(dt, 0);
@@ -107,6 +119,7 @@ export class KuroController {
     this.fsm.addState('Run', {
       enter: () => {
         this.hasAirDash = true;
+        this.hasDoubleJump = true;
       },
       fixedUpdate: (dt) => {
         if (this.checkAttackTrigger()) return;
@@ -137,6 +150,7 @@ export class KuroController {
       fixedUpdate: (dt) => {
         if (this.checkAttackTrigger()) return;
         if (this.checkDashTrigger()) return;
+        if (this.checkJumpTrigger()) return; // Mid-air Double Jump!
 
         this.applyAirMovement(dt);
         this.applyGravity(dt);
@@ -468,15 +482,67 @@ export class KuroController {
   }
 
   checkJumpTrigger() {
-    if (this.input.jumpBuffered && (this.coyoteTimer > 0)) {
+    if (!this.input.jumpBuffered) return false;
+
+    if (this.coyoteTimer > 0) {
       this.input.consumeJump();
+      this.fsm.changeState('JumpRise');
+      return true;
+    } else if (this.hasDoubleJump) {
+      // Mid-air Double Jump with ink ring burst under Kuro's feet
+      this.input.consumeJump();
+      this.hasDoubleJump = false;
+      if (this.ripples) {
+        this.ripples.spawn(this.aabb.x, this.aabb.y - this.aabb.halfH, 1.1);
+      }
       this.fsm.changeState('JumpRise');
       return true;
     }
     return false;
   }
 
+  updateLanternGrappleTarget() {
+    this.targetGrappleLantern = null;
+    if (this.coyoteTimer > 0 || !this.swingingLanternsRef || !this.swingingLanternsRef.length) return;
+
+    let bestDist = 11.5;
+    for (const l of this.swingingLanternsRef) {
+      const lx = l.bobX ?? l.pivotX;
+      const ly = l.bobY ?? (l.pivotY - l.ropeLength);
+      const d = Math.hypot(lx - this.aabb.x, ly - this.aabb.y);
+      if (d < bestDist && d > 1.2) {
+        bestDist = d;
+        this.targetGrappleLantern = { lantern: l, x: lx, y: ly };
+      }
+    }
+  }
+
   checkDashTrigger() {
+    this.updateLanternGrappleTarget();
+
+    // 1. Contextual Lantern Grapple Dash when airborne near a suspended vermilion lantern
+    if (this.input.dashBuffered && this.targetGrappleLantern) {
+      this.input.consumeDash();
+      const target = this.targetGrappleLantern;
+      if (this.afterimages) {
+        this.afterimages.spawn(this.aabb.x, this.aabb.y, this.facing);
+      }
+      this.aabb.x = target.x;
+      this.aabb.y = target.y + 0.6;
+      this.velocity.x = this.facing * 9.5;
+      this.velocity.y = 14.5;
+      this.hasAirDash = true;
+      this.hasDoubleJump = true;
+      this.dashCooldownTimer = 0.15;
+      if (this.inkSplash) {
+        this.inkSplash.spawnParryBurst(target.x, target.y, true);
+      }
+      events.emit('lantern_grapple', { x: target.x, y: target.y });
+      this.fsm.changeState('JumpRise');
+      return true;
+    }
+
+    // 2. Standard Directional Ink Step Dash
     if (!this.hasInkStepUnlocked) return false;
     if (this.input.dashBuffered && this.dashCooldownTimer <= 0 && this.hasAirDash) {
       this.input.consumeDash();
