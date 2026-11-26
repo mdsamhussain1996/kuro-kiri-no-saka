@@ -13,12 +13,12 @@ export class ParallaxBackground {
 
     const parchmentColor = new THREE.Color(CONFIG.PALETTE.parchment);
 
-    // 4 Layers of 3D Multi-Faceted Shan-Shui Mountain Ranges (Cool Slate Shadow vs Warm Silk Sunlit Slopes)
+    // 4 Layers of 3D Multi-Faceted Shan-Shui Mountain Ranges (~30% lighter & lower contrast for 3-plane Sumi-e hierarchy)
     const layerConfigs = [
-      { depth: -92, factor: 0.05, litColor: '#b3a890', shadowColor: '#676b6c', ridgeColor: '#474c4f', peaks: 14, amp: 26, baseY: -3, seed: 17 },
-      { depth: -64, factor: 0.10, litColor: '#9c927d', shadowColor: '#484f54', ridgeColor: '#2e3438', peaks: 18, amp: 21, baseY: -5, seed: 31 },
-      { depth: -38, factor: 0.16, litColor: '#827a68', shadowColor: '#2d3439', ridgeColor: '#1b2024', peaks: 22, amp: 16, baseY: -6, seed: 53 },
-      { depth: -20, factor: 0.24, litColor: '#696356', shadowColor: '#1a2024', ridgeColor: '#0e1114', peaks: 26, amp: 11, baseY: -7, seed: 79 },
+      { depth: -92, factor: 0.05, litColor: '#d2cab6', shadowColor: '#b7b2a4', ridgeColor: '#9c988c', peaks: 14, amp: 26, baseY: -3, seed: 17 },
+      { depth: -64, factor: 0.10, litColor: '#cac1ac', shadowColor: '#a7a294', ridgeColor: '#8b877c', peaks: 18, amp: 21, baseY: -5, seed: 31 },
+      { depth: -38, factor: 0.16, litColor: '#c0b7a2', shadowColor: '#969184', ridgeColor: '#7a766b', peaks: 22, amp: 16, baseY: -6, seed: 53 },
+      { depth: -20, factor: 0.24, litColor: '#b5ac97', shadowColor: '#848074', ridgeColor: '#69665c', peaks: 26, amp: 11, baseY: -7, seed: 79 },
     ];
 
     layerConfigs.forEach((cfg) => {

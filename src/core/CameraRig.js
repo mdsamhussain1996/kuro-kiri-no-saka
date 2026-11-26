@@ -76,17 +76,15 @@ export class CameraRig {
   }
 
   getBossArenaFraming(px) {
-    // Act I Boss Arena: Kurogane, the Gatekeeper
+    // Zoomed closer (z=18.8) so Kuro is >= 8% of screen height while both Kuro and Boss remain framed
     if (px >= 244 && px <= 292) {
-      return { x: 259.0, y: 53.2, z: 26.5 };
+      return { x: 259.0, y: 52.6, z: 18.8 };
     }
-    // Act II Boss Arena: Lady Shirayuki, the Mist Weaver
     if (px >= 502 && px <= 558) {
-      return { x: 525.0, y: 78.2, z: 26.5 };
+      return { x: 525.0, y: 77.6, z: 18.8 };
     }
-    // Act III Final Boss Arena: Lord Sumi-Ou, Warlord of the Iron Brush
     if (px >= 774 && px <= 845) {
-      return { x: 800.0, y: 102.2, z: 27.5 };
+      return { x: 800.0, y: 101.6, z: 19.6 };
     }
     return null;
   }
@@ -97,8 +95,9 @@ export class CameraRig {
     if (bossArena) {
       this.targetCameraY = bossArena.y;
     } else {
-      // Lower framing (y + 1.35) + vertical deadzone (1.1 u) so small hops don't bob camera
-      const desiredY = player.aabb.y + 1.35;
+      // Lower framing (y + 1.35) + falling look-ahead + vertical deadzone (1.1 u)
+      const fallLook = player.velocity?.y < -4 ? Math.max(-1.6, player.velocity.y * 0.08) : 0;
+      const desiredY = player.aabb.y + 1.35 + fallLook;
       const dy = desiredY - this.targetCameraY;
       if (player.coyoteTimer > 0) {
         if (Math.abs(dy) > 0.35) {

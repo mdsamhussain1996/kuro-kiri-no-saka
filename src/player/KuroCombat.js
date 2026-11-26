@@ -197,6 +197,7 @@ export class KuroCombat {
       if (this.loop) {
         this.loop.triggerHitStop(120);
       }
+      this.player.addInk?.(90); // +30% of 300 max ink on perfect parry
       events.emit('camera_shake', { amount: 0.35 });
       events.emit('parry_perfect', { enemy });
 
@@ -226,6 +227,7 @@ export class KuroCombat {
 
   // --- Handle Kuro Attacking Enemy ---
   onHitEnemy(enemyHurtbox) {
+    if (this.player.health <= 0 || this.player.fsm?.isInState('Dead')) return;
     const enemy = enemyHurtbox.owner;
     if (!enemy || enemy.isDead) return;
 
@@ -237,6 +239,7 @@ export class KuroCombat {
       // BACKSTAB INSTANT KILL!
       const damage = 999;
       enemy.takeDamage(damage, true, this.player.aabb.x);
+      this.player.addInk?.(150); // +50% of 300 max ink on backstab
 
       // 0.15s 20% slow-motion
       if (this.loop) {
@@ -263,6 +266,14 @@ export class KuroCombat {
     const finalDamage = enemy.isStaggered ? damage * CONFIG.COMBAT.riposteMultiplier : damage;
 
     enemy.takeDamage(finalDamage, false, this.player.aabb.x);
+
+    // Air-slash bounce when hitting airborne or regular enemy in mid-air (Part C)
+    if (!this.player.wasGroundedLastFrame && this.isAirAttack) {
+      this.player.velocity.y = Math.max(this.player.velocity.y, 8.5);
+    }
+
+    // Earn ink from combat craft (+5% normal hit, +10% finisher)
+    this.player.addInk?.(isHeavy ? 30 : 15);
 
     // If Kuro is airborne and hit an airborne enemy (Tengu), refresh air dash!
     if (!this.player.wasGroundedLastFrame && enemy.isAirborne) {
@@ -294,6 +305,7 @@ export class KuroCombat {
     }
 
     this.player.health = Math.max(0, this.player.health - amount);
+    this.player.addInk?.(-100); // Taking damage spills 1 ink segment
     this.player.invincibilityTimer = CONFIG.COMBAT.hurtInvincibility;
 
     // Knockback away from damage source
@@ -327,6 +339,12 @@ export class KuroCombat {
 
   // --- Fixed Update ---
   fixedUpdate(dt) {
+    if (this.player.health <= 0 || this.player.fsm?.isInState('Dead')) {
+      this.attackPhase = null;
+      this.attackHitbox.deactivate();
+      this.endParry();
+      return;
+    }
     // Decrement combo window timer
     if (this.comboWindowTimer > 0) {
       this.comboWindowTimer -= dt;

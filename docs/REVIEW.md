@@ -1,21 +1,40 @@
-# KURO: Kiri-no-Saka — Reviewer Critique (`docs/REVIEW.md`)
+# KURO: Kiri-no-Saka — Verification & QA Review
 
-## What Improved
-- **Unified Input & Controls**: All bindings now live in `CONFIG.CONTROLS` (`J` Attack, `K` Parry, `L/Shift` Ink-Step Dash, `W/Up/Space` Jump, `Esc/P` Pause, `M` Mute). Gamepad edge detection, `0.25` radial deadzone, `preventDefault()` hygiene, and unscaled-dt input buffering (`Loop.onInputUpdate`) eliminated auto-repeat jumps and stuck keys.
-- **Sumi-e Value Readability**: Strengthened top-ledge dry-brush highlights, silhouette pen contours, parchment rim-light on dark figures (`SumieShader.js`), brightened `PostFX` center wash, and added unaware (`○`) vs alerted (`!`) vermilion rings above Ashigaru sentries.
-- **HUD & Pause Menu**: Removed the debug chapter strip from normal play, moved unlocked Chapter Select into `PauseMenu` alongside Keyboard/Gamepad control tabs, Master/Music/SFX sliders, Mute (`M`), Reduce Shake, and Quality (`High`/`Low`) toggles. Fixed mobile `390x844` touch-control overlap.
-- **Audio Engine**: Eliminated all `BiquadFilterNode` warnings, added a `DynamicsCompressorNode` master limiter, replaced random `setTimeout` plucks with an `AudioContext.currentTime` lookahead scheduler, added chapter-driven rain/boss music, surface footsteps, and victory stingers.
+**Reviewed branch:** `main` (post-fix verification pass)  
+**Test environment:** Node.js unit/milestone suites + Headless Chrome CDP (`scripts/playtest.mjs`, SwiftShader WebGL) + Vite production build (`dist/`)
 
-## Review Scores
-| Category | Score | Notes |
-| :--- | :--- | :--- |
-| **Controls** | 9 / 10 | Unified `CONFIG.CONTROLS`, edge-detected gamepad, unscaled buffers, mobile touch pad |
-| **Combat** | 9 / 10 | Crisp 3-hit combo, 120ms perfect parry hitstop, late-parry clink, unaware `○` backstab cue |
-| **Traversal** | 8.5 / 10 | Corner correction, fast-fall, 0.15s hold-Down drop-through, bamboo rebound peak glint |
-| **Visuals / Readability** | 9 / 10 | Distinct 3-plane Sumi-e ink contrast, Voronoi stone steps, clean boss framing |
-| **Audio** | 8.5 / 10 | Zero BiquadFilter warnings, lookahead pentatonic score, surface footsteps, persisted sliders |
-| **UI** | 9 / 10 | Zero overlap at `1280x720` & `390x844`, clean PauseMenu with unlocked chapter select |
+---
 
-## Playtest Metrics
-- **Frame Pacing (60 frames, visible tab)**: `avgMs = 16.46`, `maxMs = 16.70`, `61 FPS`.
-- **Console Errors / Warnings**: `0` errors, `0` `BiquadFilterNode` warnings, `0` uncaught exceptions across all 8 chapters and 3 boss arenas.
+## 1. Blocker & Upgrade Verification Table
+
+| ID | Issue / Feature | Evidence & Method | Result |
+| :--- | :--- | :--- | :--- |
+| **A1** | Ledge grab `NaN` softlock (`snapX`/`snapY`/`climbTargetX`/`climbTargetY`) | `node tests/ledge.test.js` + finite-coordinate guard in `KuroController.fixedUpdate` | **PASS** |
+| **A2** | Campaign continuity: defeating Kurogane unlocks Scroll 1 + Ippitsu without triggering `EndCard` | `scripts/playtest.mjs` (`?chapter=4&skipIntro`, `endCardOpacity === '0'`, `hasIppitsuUnlocked === true`) | **PASS** |
+| **A3** | Dead-player attack/boss-kill race condition | `node tests/death_race.test.js` (cancels combat phase, hitboxes, parry on `Dead`) | **PASS** |
+| **A4** | Bosses trivially killed by mash-bot | `scripts/playtest.mjs` deterministic 60s (3600-step) mash-bot vs all 3 bosses (`Ch4`: player died, boss 4/40 HP; `Ch6`: survived 60s, boss 38/56 HP; `Ch8`: player died, boss 64/64 HP) | **PASS** |
+| **A5** | Paint Bridge (`E`) & Bell Resonance (`F`) ink/unlock gating | `src/main.js` + `src/level/Level1.js` (`100` ink cost, Bell reveals mist platforms for `8s`) | **Verified in code & build** |
+| **A6** | Early Ch1 checkpoint & Lost Brushstrokes | `src/level/Level1.js` (`campaignCheckpoints` at `(28, 6.2)`, 15 collectible brushstrokes) + `node src/test_m4.js` | **PASS** |
+| **A7** | Zero console warnings/errors (`BiquadFilterNode`, `HUD.js`) | `scripts/playtest.mjs` CDP `Runtime.consoleAPICalled` & `exceptionThrown` listeners across Ch1, Ch4, Ch6, Ch8 | **PASS (0 errors, 0 warnings)** |
+| **A8** | Responsive HUD zero-overlap (`960×540`, `1280×720`, `1920×1080`) & 3-plane Sumi-e contrast | `scripts/playtest.mjs` bounding-box overlap assertions + inspected screenshots in `media/review/` (`ch1-960x540.png`, `ch1-1280x720.png`, `ch4-boss.png`, `ch6-boss.png`, `ch8-boss.png`, `ch1-mobile.png`) | **PASS** |
+| **Build** | Production bundle & dev-only `window.__game` stripping | `npm run build` (`705ms`) + `grep -rn "__game" dist/` returned 0 matches | **PASS** |
+
+---
+
+## 2. Automated Test Suite Results
+
+- `node tests/ledge.test.js` — **PASS**
+- `node tests/death_race.test.js` — **PASS**
+- `node tests/input.test.js` — **PASS**
+- `node src/test_m3.js` — **PASS**
+- `node src/test_m4.js` — **PASS**
+- `node src/test_m5.js` — **PASS**
+- `node scripts/playtest.mjs` — **PASS** (HUD overlap 960×540 / 1280×720 / 1920×1080, A2 continuity, A4 3-boss mash-bot, A7 zero console warnings/errors)
+
+---
+
+## 3. Known Scope & Untested Areas
+
+- **Full manual human playthrough:** All 8 chapters were not played end-to-end manually by a human in this session; chapter continuity, boss fights, and HUD layout were verified via automated deterministic bot stepping (`scripts/playtest.mjs`), unit tests, and visual screenshot inspection.
+- **Physical Gamepad hardware:** Gamepad input mapping (`Input.js`) was verified via `tests/input.test.js` logic tests rather than a physical USB/Bluetooth controller.
+- **Web Audio subjective mix:** Verified zero Web Audio API console warnings/exceptions in headless Chrome; subjective speaker listening was not performed in this headless environment.

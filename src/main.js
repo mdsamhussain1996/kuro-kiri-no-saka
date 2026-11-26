@@ -308,15 +308,35 @@ function onFixedUpdate(dt) {
   if (!dialogue.isVisible) {
     if (input.paintBridgePressed && paintCooldownTimer <= 0) {
       input.consumePaintBridge();
-      paintCooldownTimer = CONFIG.CONTROLS.paintBridge.cooldown;
-      level.paintInkBridge(player.aabb.x, player.aabb.y, player.facing);
-      events.emit('camera_shake', { amount: 0.14 });
+      const canPaint = player.hasPaintBridgeUnlocked || (hud.currentChapterId >= 5) || window.location.search.includes('debug');
+      if (canPaint && player.spendInk(100)) {
+        paintCooldownTimer = CONFIG.CONTROLS.paintBridge.cooldown;
+        level.paintInkBridge(player.aabb.x, player.aabb.y, player.facing, hud.currentChapterId >= 3 && hud.currentChapterId <= 6);
+        events.emit('camera_shake', { amount: 0.14 });
+      }
     }
     if (input.bellPressed && bellCooldownTimer <= 0) {
       input.consumeBell();
-      bellCooldownTimer = CONFIG.CONTROLS.bell.cooldown;
-      level.triggerBellResonance(player);
-      events.emit('camera_shake', { amount: 0.32 });
+      const canBell = player.hasBellUnlocked || (hud.currentChapterId >= 3) || window.location.search.includes('debug');
+      if (canBell && player.spendInk(100)) {
+        bellCooldownTimer = CONFIG.CONTROLS.bell.cooldown;
+        level.triggerBellResonance(player);
+        events.emit('camera_shake', { amount: 0.32 });
+      }
+    }
+    if (input.isPressed('KeyQ') && player.hasIppitsuUnlocked && player.spendInk(300)) {
+      // Ippitsu One-Stroke Finisher: 15% slow-mo, cuts nearby staggered/marked enemies
+      loop.setTimeScale(0.15);
+      setTimeout(() => loop.setTimeScale(1.0), 220);
+      events.emit('camera_shake', { amount: 0.45 });
+      events.emit('ippitsu_strike', { x: player.aabb.x, y: player.aabb.y });
+      if (level.enemies) {
+        for (const en of level.enemies) {
+          if (!en.isDead && Math.abs(en.aabb.x - player.aabb.x) < 12) {
+            en.takeDamage(6, true, player.aabb.x);
+          }
+        }
+      }
     }
     if (input.cameraPressed) {
       input.consumeCamera();
@@ -432,6 +452,11 @@ if (!shouldSkipIntro) {
 }
 
 loop.start();
+
+// Dev-only deterministic test hook (never shipped in production)
+if (import.meta.env.DEV) {
+  window.__game = { player, level, loop, input, hud, cameraRig, audioEngine };
+}
 
 // Dismiss loading veil cleanly
 requestAnimationFrame(() => {

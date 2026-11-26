@@ -24,12 +24,30 @@ export class LordSumiOu {
     this.aabb = new AABB(x, y + this.height * 0.5, this.width, this.height);
     this.facing = -1;
 
-    this.maxHp = 48;
+    this.maxHp = 64;
     this.hp = this.maxHp;
     this.phase = 1; // Phase 2 "Living Calligraphy" at <= 50% HP
+    this.retriesInPhase = 0;
     this.isDead = false;
     this.isActive = false;
-    this.isVulnerable = true;
+    this.isVulnerable = false; // Armored except during post-sweep punish window
+    this.vulnerableTimer = 0;
+
+    events.on('player:respawn', () => {
+      if (this.isDead || !this.isActive) return;
+      this.attackHitbox.deactivate();
+      this.isVulnerable = false;
+      this.vulnerableTimer = 0;
+      this.retriesInPhase++;
+      if (this.retriesInPhase <= 2 && this.phase === 2) {
+        this.hp = Math.ceil(this.maxHp * 0.5);
+      } else {
+        this.phase = 1;
+        this.hp = this.maxHp;
+        this.retriesInPhase = 0;
+      }
+      events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
+    });
 
     this.actionTimer = 2.0;
     this.inkPillars = [];
@@ -153,31 +171,6 @@ export class LordSumiOu {
     return brushGrp;
   }
 
-  takeDamage(amount = 1, sourceX = 0, isWeakPoint = false) {
-    if (this.isDead) return;
-    const mult = isWeakPoint ? 1.5 : 1.0;
-    this.hp = Math.max(0, this.hp - amount * mult);
-
-    if (this.inkSplash) {
-      this.inkSplash.spawnHitImpact(this.aabb.x, this.aabb.y, this.facing, 18, true, true);
-    }
-    events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
-
-    // Enter Phase 2 "Living Calligraphy" at 50% HP!
-    if (this.hp <= this.maxHp * 0.5 && this.phase === 1) {
-      this.phase = 2;
-      this.calligraphyRing.visible = true;
-      events.emit('camera_shake', { amount: 0.55 });
-      if (this.shockwaves) {
-        this.shockwaves.spawnRingShockwave(this.aabb.x, this.groundY);
-      }
-    }
-
-    if (this.hp <= 0) {
-      this.die();
-    }
-  }
-
   summonInkPillar(targetX) {
     const pillarGroup = new THREE.Group();
     pillarGroup.position.set(targetX, this.groundY, 0);
@@ -227,12 +220,42 @@ export class LordSumiOu {
     }
 
     // Trigger Grand Campaign Sunrise Parchment Wash & Final Victory!
+    events.emit('scroll_unlocked', CONFIG.SCROLLS[2]);
     events.emit('campaign_sunrise_victory');
     events.emit('boss_defeated');
   }
 
+  takeDamage(amount = 1, isWeakPoint = false) {
+    if (this.isDead || !this.isActive) return;
+    if (!this.isVulnerable && !isWeakPoint) {
+      events.emit('boss_clink', { boss: this });
+      return;
+    }
+    const dmg = isWeakPoint ? amount * 2 : amount;
+    this.hp = Math.max(0, this.hp - dmg);
+    events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
+    if (this.hp <= this.maxHp * 0.5 && this.phase === 1) {
+      this.phase = 2;
+      events.emit('camera_shake', { amount: 0.5 });
+    }
+    if (this.hp <= 0) {
+      this.die();
+    }
+  }
+
   fixedUpdate(dt, player) {
     if (this.isDead || !player) return;
+    if (player.health <= 0 || player.fsm?.isInState('Dead')) {
+      this.attackHitbox.deactivate();
+      return;
+    }
+
+    if (this.vulnerableTimer > 0) {
+      this.vulnerableTimer -= dt;
+      if (this.vulnerableTimer <= 0) {
+        this.isVulnerable = false;
+      }
+    }
 
     if (!this.isActive && player.aabb.x >= 776) {
       this.isActive = true;
@@ -253,10 +276,15 @@ export class LordSumiOu {
       if (this.shockwaves) {
         this.shockwaves.spawnFloorWave(this.aabb.x + this.facing * 1.6, this.groundY, this.facing, 13.5);
       }
+      this.attackHitbox.damage = 1;
+      this.attackHitbox.activate();
+      this.isVulnerable = true;
+      this.vulnerableTimer = 1.0; // Post-sweep punish window
       this.leftBrush.rotation.z = -0.85;
       this.rightBrush.rotation.z = 0.45;
       setTimeout(() => {
         if (!this.isDead) {
+          this.attackHitbox.deactivate();
           this.leftBrush.rotation.z = -0.35;
           this.rightBrush.rotation.z = -0.18;
         }

@@ -23,12 +23,29 @@ export class LadyShirayuki {
     this.aabb = new AABB(x, y + 3.0, this.width, this.height);
     this.facing = -1;
 
-    this.maxHp = 32;
+    this.maxHp = 56;
     this.hp = this.maxHp;
     this.phase = 1;
+    this.retriesInPhase = 0;
     this.isDead = false;
     this.isActive = false;
-    this.isVulnerable = true;
+    this.isVulnerable = false; // Only vulnerable in 1.4s window after needle fan or parry/bell stagger
+    this.vulnerableTimer = 0;
+
+    events.on('player:respawn', () => {
+      if (this.isDead || !this.isActive) return;
+      this.isVulnerable = false;
+      this.vulnerableTimer = 0;
+      this.retriesInPhase++;
+      if (this.retriesInPhase <= 2 && this.phase === 2) {
+        this.hp = Math.ceil(this.maxHp * 0.5);
+      } else {
+        this.phase = 1;
+        this.hp = this.maxHp;
+        this.retriesInPhase = 0;
+      }
+      events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
+    });
 
     this.actionTimer = 1.6;
     this.teleportPoints = [
@@ -64,17 +81,18 @@ export class LadyShirayuki {
   }
 
   buildModel() {
+    // Inverted Ink Silhouette: crisp white-robed shrine maiden with dark ink outline + vermilion hairpin
     const silkMat = createSumieMaterial({
-      inkDark: 0x1a1917,
-      inkMid: 0x6b6860,
-      inkLight: 0xd8d3c5,
-      darkBias: -0.08,
+      inkDark: 0xd8d3c5,
+      inkMid: 0xeae5d9,
+      inkLight: 0xf7f4eb,
+      darkBias: -0.35,
     });
     const darkMat = createSumieMaterial({
-      inkDark: 0x121210,
-      inkMid: 0x33312d,
-      inkLight: 0x66635b,
-      darkBias: 0.2,
+      inkDark: 0x3d3b36,
+      inkMid: 0x6b6860,
+      inkLight: 0xd8d3c5,
+      darkBias: -0.15,
     });
 
     // Flowing Miko Hakama & Robes
@@ -134,26 +152,6 @@ export class LadyShirayuki {
     return grp;
   }
 
-  takeDamage(amount = 1, sourceX = 0, isWeakPoint = false) {
-    if (this.isDead) return;
-    const mult = isWeakPoint ? 1.5 : 1.0;
-    this.hp = Math.max(0, this.hp - amount * mult);
-
-    if (this.inkSplash) {
-      this.inkSplash.spawnHitImpact(this.aabb.x, this.aabb.y, this.facing, 16, true, true);
-    }
-    events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
-
-    if (this.hp <= this.maxHp * 0.55 && this.phase === 1) {
-      this.phase = 2;
-      this.summonMirrorClones();
-    }
-
-    if (this.hp <= 0) {
-      this.die();
-    }
-  }
-
   summonMirrorClones() {
     for (const c of this.clones) {
       c.active = true;
@@ -194,16 +192,41 @@ export class LadyShirayuki {
     if (this.inkSplash) {
       this.inkSplash.spawnDeathDissolve(this.aabb.x, this.aabb.y, 2.0, 3.2);
     }
-    events.emit('scroll_unlocked', {
-      scrollId: 2,
-      title: 'Second Scroll of Reflection',
-      desc: 'Deflected projectiles now explode in an AoE vermilion ink burst!',
-    });
+    events.emit('scroll_unlocked', CONFIG.SCROLLS[1]);
     events.emit('act2_boss_defeated');
+  }
+
+  takeDamage(amount = 1) {
+    if (this.isDead || !this.isActive) return;
+    if (!this.isVulnerable) {
+      events.emit('boss_clink', { boss: this });
+      // Teleport away if attacked outside her punish window
+      const nextPt = this.teleportPoints[Math.floor(Math.random() * this.teleportPoints.length)];
+      this.aabb.x = nextPt.x;
+      this.aabb.y = nextPt.y;
+      return;
+    }
+    this.hp = Math.max(0, this.hp - amount);
+    events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
+    if (this.hp <= this.maxHp * 0.5 && this.phase === 1) {
+      this.phase = 2;
+      events.emit('camera_shake', { amount: 0.4 });
+    }
+    if (this.hp <= 0) {
+      this.die();
+    }
   }
 
   fixedUpdate(dt, player) {
     if (this.isDead || !player) return;
+    if (player.health <= 0 || player.fsm?.isInState('Dead')) return;
+
+    if (this.vulnerableTimer > 0) {
+      this.vulnerableTimer -= dt;
+      if (this.vulnerableTimer <= 0) {
+        this.isVulnerable = false;
+      }
+    }
 
     // Activate boss HUD when player enters Act II Sanctuary Arena (x >= 504)
     if (!this.isActive && player.aabb.x >= 504 && player.aabb.x <= 558) {
@@ -218,14 +241,25 @@ export class LadyShirayuki {
 
     this.actionTimer -= dt;
     if (this.actionTimer <= 0) {
-      // Teleport in a burst of mist, then fire spirit needle fan volley!
+      // Teleport to the sanctuary point furthest from player, then fire spirit needle fan volley!
       if (this.inkSplash) {
         this.inkSplash.spawnDeathDissolve(this.aabb.x, this.aabb.y, 1.2, 2.2);
       }
-      const nextPt = this.teleportPoints[Math.floor(Math.random() * this.teleportPoints.length)];
+      let nextPt = this.teleportPoints[0];
+      let bestDist = -1;
+      for (const pt of this.teleportPoints) {
+        const d = Math.abs(pt.x - player.aabb.x);
+        if (d > bestDist) {
+          bestDist = d;
+          nextPt = pt;
+        }
+      }
       this.aabb.x = nextPt.x;
       this.aabb.y = nextPt.y;
+      this.facing = player.aabb.x >= this.aabb.x ? 1 : -1;
       this.fireNeedleFan(player);
+      this.isVulnerable = true;
+      this.vulnerableTimer = 0.95; // Brief punish window after firing fan volley
       this.actionTimer = this.phase === 2 ? 2.1 : 2.6;
     }
 

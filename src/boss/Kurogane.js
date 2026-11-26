@@ -28,7 +28,25 @@ export class Kurogane {
     this.maxHp = cfg.hpMax;
     this.hp = this.maxHp;
     this.phase = 1; // 1 (100-60%), 2 (60-25%), 3 (<25%)
+    this.retriesInPhase = 0;
     this.isDead = false;
+
+    events.on('player:respawn', () => {
+      if (this.isDead || this.fsm.isInState('Dormant')) return;
+      this.attackHitbox.deactivate();
+      this.isVulnerable = false;
+      this.isStaggered = false;
+      this.retriesInPhase++;
+      if (this.retriesInPhase <= 2 && this.phase > 1) {
+        this.hp = this.phase === 3 ? Math.ceil(this.maxHp * 0.25) : Math.ceil(this.maxHp * 0.6);
+      } else {
+        this.phase = 1;
+        this.hp = this.maxHp;
+        this.retriesInPhase = 0;
+      }
+      events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
+      this.fsm.changeState('Decide');
+    });
     this.isVulnerable = false;
     this.isStaggered = false;
     this.canBeParried = false;
@@ -53,14 +71,14 @@ export class Kurogane {
     this.bodyHurtbox.activate();
     combatManager.registerEnemyHurtbox(this.bodyHurtbox);
 
-    // 2. Nodachi Blade Attack Hitbox
+    // 2. Nodachi Blade Attack Hitbox (covers ground level + close range)
     this.attackHitbox = new Hitbox({
       owner: this,
       type: 'enemy_attack',
-      width: 4.5,
-      height: 1.8,
-      offsetX: 2.5,
-      offsetY: 0,
+      width: 5.2,
+      height: 3.2,
+      offsetX: 1.6,
+      offsetY: -0.9,
       damage: 1,
     });
     combatManager.registerEnemyAttack(this.attackHitbox);
@@ -556,8 +574,8 @@ export class Kurogane {
         const isBlink = Math.floor(performance.now() / 80) % 2 === 0;
         this.weakMat.color.setHex(isBlink ? 0xb8292f : 0x141413);
 
-        // Attack hitbox only active for initial 0.15s slam
-        if (this.vulnerableTimer <= cfg.slamEmbedDuration - 0.15) {
+        // Attack hitbox active for initial 0.25s slam
+        if (this.vulnerableTimer <= cfg.slamEmbedDuration - 0.25) {
           this.attackHitbox.deactivate();
         }
 
@@ -742,6 +760,8 @@ export class Kurogane {
         }
 
         events.emit('boss_defeated', { boss: this });
+        events.emit('scroll_unlocked', CONFIG.SCROLLS[0]);
+        events.emit('ippitsu_unlocked');
       },
       fixedUpdate: (dt) => {
         this.stateTimer -= dt;
@@ -808,6 +828,10 @@ export class Kurogane {
 
   fixedUpdate(dt, player) {
     if (this.isDead) return;
+    if (player && (player.health <= 0 || player.fsm?.isInState('Dead'))) {
+      this.attackHitbox.deactivate();
+      return;
+    }
 
     this.fsm.fixedUpdate(dt, player);
 

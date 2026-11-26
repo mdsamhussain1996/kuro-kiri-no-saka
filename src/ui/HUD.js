@@ -221,6 +221,26 @@ export class HUD {
     this.subRow.appendChild(this.dashMeter);
 
     this.topLeft.appendChild(this.subRow);
+
+    // Sumi Ink-Stone Meter (3 segments of 100 each = 300 max)
+    this.inkRow = document.createElement('div');
+    this.inkRow.style.cssText = 'display: flex; align-items: center; gap: 5px; margin-top: 2px;';
+    const inkLabel = document.createElement('span');
+    inkLabel.style.cssText = 'font-size: 11px; font-weight: bold; color: #1c1914; letter-spacing: 0.08em; margin-right: 4px;';
+    inkLabel.innerText = '墨';
+    this.inkRow.appendChild(inkLabel);
+    this.inkSegments = [];
+    for (let i = 0; i < 3; i++) {
+      const segWrap = document.createElement('div');
+      segWrap.style.cssText = 'width: 34px; height: 6px; background: rgba(28,25,20,0.20); border: 1px solid rgba(28,25,20,0.45); border-radius: 2px; overflow: hidden;';
+      const segFill = document.createElement('div');
+      segFill.style.cssText = 'width: 0%; height: 100%; background: #141413; transition: width 0.12s ease;';
+      segWrap.appendChild(segFill);
+      this.inkRow.appendChild(segWrap);
+      this.inkSegments.push(segFill);
+    }
+    this.topLeft.appendChild(this.inkRow);
+
     this.container.appendChild(this.topLeft);
 
     // 2. Top-Right Poetic Chapter Navigation Strip (Debug/Dev mode ONLY)
@@ -402,35 +422,47 @@ export class HUD {
     `;
     this.container.appendChild(this.subtitleLine);
 
-    // 6. High-Contrast Controls Hint (generated from CONFIG.CONTROLS, >=13px, fades after 60s, hidden on touch)
+    // 6. Responsive Bottom Bar (Zero overlap from 960x540 to 2560x1440; hidden on touch)
     const C = CONFIG.CONTROLS;
+    this.bottomBar = document.createElement('div');
+    this.bottomBar.style.cssText = `
+      position: absolute;
+      bottom: 12px;
+      left: 20px;
+      right: 20px;
+      display: ${isTouch ? 'none' : 'flex'};
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+    `;
+
     this.controlsHint = document.createElement('div');
     this.controlsHint.style.cssText = `
-      position: absolute;
-      bottom: 14px;
-      left: 28px;
-      font-size: 13px;
+      font-size: clamp(11.5px, 1.05vw, 13px);
       font-style: normal;
       font-weight: 600;
       color: #141413;
-      background: rgba(234, 229, 217, 0.86);
-      border: 1px solid rgba(28, 25, 20, 0.22);
-      padding: 4px 12px;
+      background: rgba(234, 229, 217, 0.88);
+      border: 1px solid rgba(28, 25, 20, 0.25);
+      padding: 4px 10px;
       border-radius: 3px;
-      letter-spacing: 0.03em;
-      display: ${isTouch ? 'none' : 'block'};
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 68vw;
       transition: opacity 0.6s ease;
     `;
-    this.controlsHint.innerHTML = `${C.moveLeft.display}/${C.moveRight.display} Move · ${C.jump.display} Jump · ${C.attack.display} Attack · ${C.parry.display} Parry · ${C.dash.display} Dash · ${C.pause.display} Pause`;
-    this.container.appendChild(this.controlsHint);
+    this.controlsHint.innerHTML = `${C.moveLeft.display}/${C.moveRight.display} Move · ${C.jump.display} Jump · ${C.attack.display} Atk · ${C.parry.display} Parry · ${C.dash.display} Dash · ${C.pause.display} Pause`;
+    this.bottomBar.appendChild(this.controlsHint);
 
     this.powerBar = document.createElement('div');
     this.powerBar.style.cssText = `
-      position: absolute;
-      ${isTouch ? 'top: 22px; right: 14px;' : 'bottom: 14px; right: 24px;'}
       display: flex;
       gap: 6px;
       pointer-events: auto;
+      flex-shrink: 0;
     `;
 
     this.powerBtns = {};
@@ -438,16 +470,17 @@ export class HUD {
       const b = document.createElement('button');
       b.innerHTML = label;
       b.style.cssText = `
-        background: rgba(28, 25, 20, 0.88);
+        background: rgba(28, 25, 20, 0.90);
         color: #ede3cc;
-        border: 1px solid rgba(168, 50, 31, 0.75);
-        padding: 5px 10px;
+        border: 1px solid rgba(168, 50, 31, 0.78);
+        padding: 5px 9px;
         font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
         font-style: italic;
         font-size: 12px;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.03em;
         cursor: pointer;
         border-radius: 2px;
+        white-space: nowrap;
       `;
       b.addEventListener('click', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { code: keyCode }));
@@ -457,24 +490,31 @@ export class HUD {
       this.powerBtns[id] = b;
     };
 
-    makePowerBtn(`Paint Bridge [${C.paintBridge.display}]`, 'KeyE', 'paint');
+    makePowerBtn(`Bridge [${C.paintBridge.display}]`, 'KeyE', 'paint');
     makePowerBtn(`Bell [${C.bell.display}]`, 'KeyF', 'bell');
+    makePowerBtn(`Ippitsu [Q]`, 'KeyQ', 'ippitsu');
     makePowerBtn(`Cam [${C.camera.display}]`, 'KeyV', 'cam');
-    this.container.appendChild(this.powerBar);
+    if (isTouch) {
+      this.powerBar.style.cssText = 'position:absolute;top:20px;right:14px;display:flex;gap:5px;pointer-events:auto;';
+      this.container.appendChild(this.powerBar);
+    } else {
+      this.bottomBar.appendChild(this.powerBar);
+      this.container.appendChild(this.bottomBar);
+    }
 
-    // 7. Sumiro Boss Vitality Bar (positioned cleanly above controls hint & subtitle)
+    // 7. Sumiro Boss Vitality Bar (positioned cleanly above bottomBar & below subtitle)
     this.bossBarContainer = document.createElement('div');
     this.bossBarContainer.style.cssText = `
       position: absolute;
-      bottom: 58px;
+      bottom: 52px;
       left: 50%;
       transform: translateX(-50%);
-      width: 440px;
-      max-width: 88vw;
+      width: 420px;
+      max-width: 86vw;
       display: none;
       flex-direction: column;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       filter: url(#ink-edge);
     `;
 
@@ -598,12 +638,12 @@ export class HUD {
     if (this.bannerTimeout) clearTimeout(this.bannerTimeout);
     this.bannerTimeout = setTimeout(() => {
       this.chapterBanner.style.opacity = '0';
-    }, 3400);
+    }, 2200);
 
     if (this.poemTimeout) clearTimeout(this.poemTimeout);
     this.poemTimeout = setTimeout(() => {
       this.subtitleLine.style.opacity = '0';
-    }, 5200);
+    }, 4200);
   }
 
   setupListeners() {
@@ -689,6 +729,20 @@ export class HUD {
       }
       stamArc.style.strokeDashoffset = `${(1.0 - ratio) * circum}`;
       stamArc.style.stroke = ratio < 1.0 ? '#a8321f' : '#1c1914';
+    }
+
+    // 3b. Update 3-Segment Sumi Ink Meter
+    if (this.inkSegments) {
+      const inkVal = player.ink || 0;
+      for (let i = 0; i < 3; i++) {
+        const segPct = Math.max(0, Math.min(100, inkVal - i * 100));
+        this.inkSegments[i].style.width = `${segPct}%`;
+        this.inkSegments[i].style.background = inkVal >= 300 ? '#a8321f' : '#141413';
+      }
+    }
+    if (this.powerBtns?.ippitsu) {
+      this.powerBtns.ippitsu.style.display = player.hasIppitsuUnlocked ? 'inline-block' : 'none';
+      this.powerBtns.ippitsu.style.opacity = (player.ink || 0) >= 300 ? '1' : '0.45';
     }
 
     // 4. Contextual Lantern Grapple Prompt

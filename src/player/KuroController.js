@@ -24,9 +24,14 @@ export class KuroController {
     this.facing = 1; // 1 = right, -1 = left
     this.turnTween = 0; // for smooth 0.08s visual flip
 
-    // Health & Vitals
+    // Health, Sumi Ink Meter & Vitals
     this.maxHealth = CONFIG.COMBAT.maxHealth;
     this.health = this.maxHealth;
+    this.ink = 100; // 0..300 (3 segments of 100)
+    this.maxInk = 300;
+    this.hasBellUnlocked = false;
+    this.hasPaintBridgeUnlocked = false;
+    this.hasIppitsuUnlocked = false;
     this.invincibilityTimer = 0;
     this.hurtTimer = 0;
     this.respawnTimer = 0;
@@ -45,11 +50,16 @@ export class KuroController {
     this.swingingLanternsRef = [];
     this.targetGrappleLantern = null;
 
-    events.on('scroll_unlocked', ({ scrollId }) => {
-      if (scrollId >= 1) {
+    events.on('scroll_unlocked', (payload = {}) => {
+      const idx = payload.scrollId || payload.index || 0;
+      if (idx >= 1) {
         this.scrollOfFlowUnlocked = true;
         this.hasInkStepUnlocked = true;
+        this.hasIppitsuUnlocked = true;
       }
+    });
+    events.on('ippitsu_unlocked', () => {
+      this.hasIppitsuUnlocked = true;
     });
 
     // Wall & Ledge
@@ -273,14 +283,23 @@ export class KuroController {
         this.velocity.y = 0;
         this.hasAirDash = true;
 
-        if (ledge.side === 'left') {
-          this.aabb.x = ledge.x - this.aabb.width * 0.5;
-          this.facing = 1;
-        } else {
-          this.aabb.x = ledge.x + this.aabb.width * 0.5;
-          this.facing = -1;
+        if (ledge && Number.isFinite(ledge.snapX) && Number.isFinite(ledge.snapY)) {
+          this.aabb.x = ledge.snapX;
+          this.aabb.y = ledge.snapY;
+          if (ledge.cornerX !== undefined) {
+            this.facing = ledge.cornerX >= this.aabb.x ? 1 : -1;
+          }
+        } else if (ledge && Number.isFinite(ledge.x) && Number.isFinite(ledge.y)) {
+          if (ledge.side === 'left') {
+            this.aabb.x = ledge.x - this.aabb.width * 0.5;
+            this.facing = 1;
+          } else {
+            this.aabb.x = ledge.x + this.aabb.width * 0.5;
+            this.facing = -1;
+          }
+          this.aabb.y = ledge.y - this.aabb.height * 0.5;
         }
-        this.aabb.y = ledge.y - this.aabb.height * 0.5;
+        events.emit('player:ledgegrab', { x: this.aabb.x, y: this.aabb.y });
       },
       fixedUpdate: (dt) => {
         if (this.input.axisY > 0 || this.input.jumpBuffered) {
@@ -302,10 +321,17 @@ export class KuroController {
       enter: () => {
         this.ledgeClimbProgress = 0;
         this.ledgeClimbStart = { x: this.aabb.x, y: this.aabb.y };
-        this.ledgeClimbEnd = {
-          x: this.ledgeCorner.side === 'left' ? this.ledgeCorner.x + 0.6 : this.ledgeCorner.x - 0.6,
-          y: this.ledgeCorner.y + this.aabb.height * 0.5 + 0.05,
-        };
+        const c = this.ledgeCorner;
+        if (c && Number.isFinite(c.climbTargetX) && Number.isFinite(c.climbTargetY)) {
+          this.ledgeClimbEnd = { x: c.climbTargetX, y: c.climbTargetY };
+        } else if (c && Number.isFinite(c.x) && Number.isFinite(c.y)) {
+          this.ledgeClimbEnd = {
+            x: c.side === 'left' ? c.x + 0.6 : c.x - 0.6,
+            y: c.y + this.aabb.height * 0.5 + 0.05,
+          };
+        } else {
+          this.ledgeClimbEnd = { x: this.aabb.x + this.facing * 0.6, y: this.aabb.y + this.aabb.height };
+        }
       },
       fixedUpdate: (dt) => {
         this.ledgeClimbProgress += dt / CONFIG.PLAYER.ledgeClimbDuration;
@@ -445,7 +471,20 @@ export class KuroController {
       enter: () => {
         this.velocity.x = 0;
         this.velocity.y = 0;
-        this.respawnTimer = 1.0;
+        this.respawnTimer = 0.9;
+        // Cancel active combat hitboxes and input buffers immediately on death
+        if (this.combat) {
+          this.combat.attackPhase = null;
+          this.combat.attackHitbox?.deactivate();
+          this.combat.endParry();
+          this.combat.hurtbox?.deactivate();
+        }
+        if (this.input) {
+          this.input.consumeJump();
+          this.input.consumeAttack();
+          this.input.consumeParry();
+          this.input.consumeDash();
+        }
         events.emit('player_died');
       },
       fixedUpdate: (dt) => {
@@ -613,6 +652,17 @@ export class KuroController {
 
   // --- Fixed Update Loop (Called at 60 Hz) ---
   fixedUpdate(dt) {
+    // Finite state guard: recover gracefully if any coordinate or velocity ever becomes NaN/Inf
+    if (!Number.isFinite(this.aabb.x) || !Number.isFinite(this.aabb.y)
+      || !Number.isFinite(this.velocity.x) || !Number.isFinite(this.velocity.y)) {
+      if (!this._nanLogged) {
+        this._nanLogged = true;
+        console.warn(`[KuroController] Non-finite physics state detected in state=${this.fsm?.currentStateName}; respawning at checkpoint.`);
+      }
+      this.respawnAtCheckpoint();
+      return;
+    }
+
     // Decrement timers
     if (this.dashCooldownTimer > 0) this.dashCooldownTimer -= dt;
     if (this.ledgeGrabCooldown > 0) this.ledgeGrabCooldown -= dt;
@@ -706,6 +756,16 @@ export class KuroController {
     this.combat.takeDamage(amount, sourceX);
   }
 
+  addInk(amount) {
+    this.ink = Math.max(0, Math.min(this.maxInk, (this.ink || 0) + amount));
+  }
+
+  spendInk(cost) {
+    if ((this.ink || 0) < cost) return false;
+    this.ink -= cost;
+    return true;
+  }
+
   setCheckpoint(x, y) {
     this.lastCheckpoint = { x, y };
   }
@@ -717,8 +777,12 @@ export class KuroController {
     this.velocity.y = 0;
     this.health = this.maxHealth;
     this.invincibilityTimer = 1.0;
+    if (this.combat?.hurtbox) {
+      this.combat.hurtbox.activate();
+    }
     this.fsm.changeState('Idle');
     events.emit('player:respawn', { x: checkpoint.x, y: checkpoint.y });
+    events.emit('ink_dissolve_respawn');
   }
 
   // --- Render Interpolation ---

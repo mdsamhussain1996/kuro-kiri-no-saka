@@ -22,10 +22,11 @@ Every model, Voronoi rock texture, particle, shader pass, and musical note is ge
 | **Katana Attack** | `J` / `Left Click` | `X` / Square | 3-hit combo & aerial slash |
 | **Parry / Guard** | `K` / `Right Click` | `LB` / L1 | 0.15s Perfect Parry window (staggers enemies & bosses) |
 | **Ink Step Dash** | `L` / `Shift` | `RB` / R2 | Invulnerable dash with ink afterimages |
-| **Paint Bridge** | `E` | `Y` / Triangle | Conjure a temporary ink bridge (3s cooldown) |
-| **Bell Resonance** | `F` | `LT` / L2 | Ring temple bell shockwave (5s cooldown) |
+| **Paint Bridge** | `E` | `Y` / Triangle | Conjure an ink bridge across chasms (costs 100 ink) |
+| **Bell Resonance** | `F` | `LT` / L2 | Ring temple bell shockwave & reveal mist platforms (costs 100 ink) |
+| **Ippitsu Finisher** | `Q` | `RT` / R1 | Full-ink (300) one-stroke slow-mo slash (unlocked after Kurogane) |
 | **3D Camera** | `V` | `Back` / Select | Cycle Oblique / Over-Shoulder / Wide camera |
-| **Pause / Mute** | `Esc` / `P` · `M` | `Start` | Pause menu, unlocked chapters, audio & quality |
+| **Pause / Mute** | `Esc` / `P` · `M` | `Start` | Pause menu, Assist mode, unlocked chapters, audio & quality |
 
 ---
 
@@ -55,5 +56,5 @@ Every model, Voronoi rock texture, particle, shader pass, and musical note is ge
 npm install
 npm run dev       # http://localhost:3000
 npm run build     # Production bundle in dist/
-node src/test_m3.js && node src/test_m4.js && node src/test_m5.js && node tests/input.test.js
+node src/test_m3.js && node src/test_m4.js && node src/test_m5.js && node tests/input.test.js && node tests/ledge.test.js && node tests/death_race.test.js
 ```

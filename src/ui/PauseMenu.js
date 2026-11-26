@@ -119,6 +119,7 @@ export class PauseMenu {
           <button id="pm-mute" style="flex:1;padding:6px;background:${this.audioEngine?.isMuted ? '#a8321f' : '#141413'};color:#eae5d9;border:none;border-radius:3px;font-size:11px;cursor:pointer;">${this.audioEngine?.isMuted ? 'AUDIO: MUTED (M)' : 'AUDIO: ON (M)'}</button>
           <button id="pm-shake" style="flex:1;padding:6px;background:#3d3b36;color:#eae5d9;border:none;border-radius:3px;font-size:11px;cursor:pointer;">SHAKE: ${saved.reduceShake ? 'REDUCED' : 'FULL'}</button>
           <button id="pm-quality" style="flex:1;padding:6px;background:#3d3b36;color:#eae5d9;border:none;border-radius:3px;font-size:11px;cursor:pointer;">QUALITY: ${(saved.quality || 'high').toUpperCase()}</button>
+          <button id="pm-assist" style="flex:1;padding:6px;background:${saved.assistMode ? '#a8321f' : '#3d3b36'};color:#eae5d9;border:none;border-radius:3px;font-size:11px;cursor:pointer;">ASSIST: ${saved.assistMode ? 'ON' : 'OFF'}</button>
         </div>
       </div>
     `;
@@ -160,6 +161,13 @@ export class PauseMenu {
       const next = cur.quality === 'low' ? 'high' : 'low';
       saveSystem.save({ ...cur, quality: next });
       this.callbacks.onQualityChange?.(next);
+      this.render();
+    };
+    this.card.querySelector('#pm-assist').onclick = () => {
+      const cur = saveSystem.load();
+      const next = !cur.assistMode;
+      saveSystem.save({ ...cur, assistMode: next });
+      this.callbacks.onAssistChange?.(next);
       this.render();
     };
   }

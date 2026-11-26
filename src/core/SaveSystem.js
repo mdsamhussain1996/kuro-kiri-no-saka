@@ -17,6 +17,12 @@ export class SaveSystem {
       muted: false,
       reduceShake: false,
       unlockedChapter: 1,
+      brushstrokes: {},
+      haikus: [],
+      chapterRanks: {},
+      postCampaignUnlocked: false,
+      assistMode: false,
+      oneDropMode: false,
       quality: 'high', // 'high' | 'low'
     };
   }

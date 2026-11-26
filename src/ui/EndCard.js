@@ -45,7 +45,7 @@ export class EndCard {
       color: #141413;
       margin-bottom: 4px;
     `;
-    this.title.innerText = 'Scroll 1 of 7 Recovered';
+    this.title.innerText = 'All 3 Scrolls Restored';
     this.wrapper.appendChild(this.title);
 
     this.subtitle = document.createElement('div');
@@ -55,7 +55,7 @@ export class EndCard {
       color: #5c5b57;
       text-transform: uppercase;
     `;
-    this.subtitle.innerText = 'The Whispering Ascent Cleared';
+    this.subtitle.innerText = 'Kiri-no-Saka Campaign Complete';
     this.wrapper.appendChild(this.subtitle);
 
     // Vermilion Seal Stamp Box
@@ -98,7 +98,7 @@ export class EndCard {
       color: #7a7870;
       margin-top: 14px;
     `;
-    this.next.innerText = '— To be continued: Level 2 (The Ink Lake) —';
+    this.next.innerText = '— Boss Rush, Time Trial & One-Drop Modes Unlocked —';
     this.wrapper.appendChild(this.next);
 
     // Replay Button
@@ -124,15 +124,103 @@ export class EndCard {
     });
     this.wrapper.appendChild(this.replayBtn);
 
+    // Export Painted Scroll (PNG) Button
+    this.exportBtn = document.createElement('button');
+    this.exportBtn.style.cssText = `
+      margin-top: 8px;
+      padding: 8px 20px;
+      background: transparent;
+      color: #a8321f;
+      border: 1.5px solid #a8321f;
+      border-radius: 4px;
+      font-family: 'Cinzel', serif;
+      font-size: 12px;
+      letter-spacing: 1.5px;
+      cursor: pointer;
+      pointer-events: auto;
+    `;
+    this.exportBtn.innerText = 'EXPORT PAINTED SCROLL (PNG)';
+    this.exportBtn.addEventListener('click', () => this.exportPaintedScroll());
+    this.wrapper.appendChild(this.exportBtn);
+
     const uiRoot = document.getElementById('ui-root') || document.body;
     uiRoot.appendChild(this.container);
 
-    events.on('boss_defeated', () => {
-      setTimeout(() => this.show(), 4000);
+    events.on('campaign_sunrise_victory', () => {
+      saveSystem.update({ postCampaignUnlocked: true });
+      setTimeout(() => this.show(), 3200);
     });
   }
 
+  getRankSeal() {
+    const data = saveSystem.load();
+    const deaths = data.deaths || 0;
+    if (deaths <= 2) return { kanji: '松', label: 'Pine (Master)' };
+    if (deaths <= 8) return { kanji: '竹', label: 'Bamboo (Seasoned)' };
+    return { kanji: '梅', label: 'Plum (Persevered)' };
+  }
+
+  exportPaintedScroll() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 900;
+    canvas.height = 420;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#eae5d9';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Sumi-e mountain silhouette wash
+    ctx.fillStyle = 'rgba(28, 25, 20, 0.14)';
+    ctx.beginPath();
+    ctx.moveTo(0, 340);
+    ctx.lineTo(140, 210);
+    ctx.lineTo(290, 280);
+    ctx.lineTo(480, 140);
+    ctx.lineTo(660, 250);
+    ctx.lineTo(810, 170);
+    ctx.lineTo(900, 290);
+    ctx.lineTo(900, 420);
+    ctx.lineTo(0, 420);
+    ctx.closePath();
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = '#141413';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
+
+    const data = saveSystem.load();
+    const rank = this.getRankSeal();
+    ctx.fillStyle = '#141413';
+    ctx.font = 'bold 34px serif';
+    ctx.fillText('KURO: Kiri-no-Saka — Painted Scroll', 48, 84);
+    ctx.font = '20px serif';
+    ctx.fillStyle = '#5c5b57';
+    ctx.fillText(`Rank: ${rank.kanji} ${rank.label}  |  Scrolls: 3/3  |  Brushstrokes: ${(data.brushstrokes || []).length}/15`, 48, 130);
+
+    // Vermilion seal stamp
+    ctx.strokeStyle = '#b8292f';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(750, 56, 92, 92);
+    ctx.fillStyle = '#b8292f';
+    ctx.font = 'bold 52px serif';
+    ctx.fillText(rank.kanji, 770, 120);
+
+    const link = document.createElement('a');
+    link.download = 'kuro-painted-scroll.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
   show() {
+    const rank = this.getRankSeal();
+    const data = saveSystem.load();
+    this.seal.innerText = rank.kanji;
+    this.stats.innerHTML = `
+      <div><strong>Rank:</strong> ${rank.label}</div>
+      <div><strong>Deaths:</strong> ${data.deaths || 0}</div>
+      <div><strong>Scrolls:</strong> 3 / 3</div>
+      <div><strong>Brushstrokes:</strong> ${(data.brushstrokes || []).length} / 15</div>
+    `;
     this.container.style.opacity = '1';
     this.container.style.pointerEvents = 'auto';
 

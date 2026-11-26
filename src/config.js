@@ -21,6 +21,13 @@ export const CONFIG = {
     mute:        { label: 'Mute Audio',   keys: ['KeyM'],               display: 'M' }
   },
 
+  // --- Campaign Scrolls (3 Bosses, 3 Scrolls — Single Source of Truth) ---
+  SCROLLS: [
+    { index: 1, total: 3, boss: 'Kurogane', title: 'Scroll 1 of 3 — Iron Brush', desc: 'Kurogane falls. Ippitsu awakened — the path to Chapter V opens.' },
+    { index: 2, total: 3, boss: 'Lady Shirayuki', title: 'Scroll 2 of 3 — Mist Mirror', desc: 'The Mist Weaver dissolves. Ascend to the Crimson Foundry.' },
+    { index: 3, total: 3, boss: 'Lord Sumi-Ou', title: 'Scroll 3 of 3 — Living Ink', desc: 'All three scrolls restored. Peace returns to Kiri-no-Saka.' },
+  ],
+
   // --- Game Loop & Simulation ---
   TIME_STEP: 1 / 60,       // 60 Hz fixed physics simulation
   MAX_DELTA: 0.1,          // Maximum delta clamped to prevent tunneling on lag spikes

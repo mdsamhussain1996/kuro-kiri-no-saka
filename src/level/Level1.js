@@ -174,6 +174,61 @@ export class Level1 {
 
     // 7. Assemble Campaign Act II (Seijaku-no-Garan — The Silent Sanctuary) & Act III (Aka-no-Kajiya — The Crimson Foundry)
     this.buildExtendedCampaignActs();
+
+    // 8. Early Chapter 1 safety checkpoint before crumbling steps & ledge cliff
+    this.campaignCheckpoints.push(new LanternCheckpoint({
+      id: 101,
+      scene: this.scene,
+      collision: this.collision,
+      x: 28,
+      y: 6.2,
+    }));
+
+    // 9. Bell-revealed Invisible-Ink Platforms (solidify & glow for 8s when Bell rings)
+    this.mistPlatforms = [];
+    this.mistRevealTimer = 0;
+    const mistPlats = [
+      { x: 185, y: 24.5, w: 4.5, h: 0.6 },
+      { x: 193, y: 26.5, w: 4.5, h: 0.6 },
+      { x: 350, y: 54.0, w: 5.0, h: 0.6 },
+    ];
+    for (const mp of mistPlats) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(mp.w, mp.h, 2.2),
+        new THREE.MeshBasicMaterial({ color: 0xa8321f, transparent: true, opacity: 0.16, wireframe: true })
+      );
+      mesh.position.set(mp.x, mp.y, 0);
+      this.scene.add(mesh);
+      this.mistPlatforms.push({ ...mp, mesh, solidRef: null });
+    }
+
+    // 10. Lost Brushstrokes (3 per chapter)
+    this.collectibles = [];
+    const strokes = [
+      { ch: 1, x: 22, y: 5.5 }, { ch: 1, x: 35, y: 9.0 }, { ch: 1, x: 49, y: 13.0 },
+      { ch: 2, x: 65, y: 14.5 }, { ch: 2, x: 85, y: 18.2 }, { ch: 2, x: 96, y: 19.0 },
+      { ch: 3, x: 130, y: 15.0 }, { ch: 3, x: 163, y: 34.0 }, { ch: 3, x: 185, y: 26.5 },
+      { ch: 5, x: 330, y: 55.0 }, { ch: 5, x: 375, y: 58.0 }, { ch: 5, x: 440, y: 65.0 },
+      { ch: 7, x: 610, y: 80.0 }, { ch: 7, x: 670, y: 86.0 }, { ch: 7, x: 730, y: 92.0 },
+    ];
+    for (let i = 0; i < strokes.length; i++) {
+      const st = strokes[i];
+      const orb = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.32, 0),
+        new THREE.MeshBasicMaterial({ color: 0xa8321f })
+      );
+      orb.position.set(st.x, st.y, 0);
+      this.scene.add(orb);
+      this.collectibles.push({
+        id: `bs_${st.ch}_${i}`,
+        type: 'brushstroke',
+        ch: st.ch,
+        x: st.x,
+        y: st.y,
+        mesh: orb,
+        collected: false,
+      });
+    }
   }
 
   buildExtendedCampaignActs() {
@@ -813,6 +868,19 @@ export class Level1 {
     const px = player ? player.aabb.x : 183.0;
     const py = player ? player.aabb.y : 23.0;
 
+    // Reveal invisible-ink mist platforms for 8 seconds
+    this.mistRevealTimer = 8.0;
+    if (this.mistPlatforms) {
+      for (const mp of this.mistPlatforms) {
+        if (!mp.solidRef) {
+          mp.solidRef = this.collision.addSolid(new AABB(mp.x, mp.y, mp.w, mp.h), { runnable: false, crumbling: false });
+        }
+        mp.mesh.material.wireframe = false;
+        mp.mesh.material.opacity = 0.85;
+      }
+    }
+    events.emit('mist_cleared', { x: px, y: py, duration: 8.0 });
+
     // Swing the Temple Bell vigorously if nearby
     if (this.templeBell) {
       this.templeBell.rotation.z = 0.45;
@@ -887,6 +955,35 @@ export class Level1 {
 
     if (this.shrine) {
       this.shrine.fixedUpdate(dt);
+    }
+
+    if (this.mistRevealTimer > 0) {
+      this.mistRevealTimer -= dt;
+      if (this.mistRevealTimer <= 0 && this.mistPlatforms) {
+        for (const mp of this.mistPlatforms) {
+          if (mp.solidRef) {
+            this.collision.removeSolid(mp.solidRef);
+            mp.solidRef = null;
+          }
+          mp.mesh.material.wireframe = true;
+          mp.mesh.material.opacity = 0.16;
+        }
+      }
+    }
+
+    if (this.collectibles && player) {
+      for (const c of this.collectibles) {
+        if (c.collected) continue;
+        c.mesh.rotation.y += dt * 2.4;
+        const dx = player.aabb.x - c.x;
+        const dy = player.aabb.y - c.y;
+        if (dx * dx + dy * dy < 1.3 * 1.3) {
+          c.collected = true;
+          c.mesh.visible = false;
+          player.addInk?.(60);
+          events.emit('brushstroke_collected', { id: c.id, ch: c.ch });
+        }
+      }
     }
 
     for (const cp of this.checkpoints) {
