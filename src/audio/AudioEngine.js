@@ -47,6 +47,10 @@ export class AudioEngine {
     return Math.max(20, Math.min(nyquistSafe, Number.isFinite(freq) ? freq : 440));
   }
 
+  clampQ(q) {
+    return Math.max(0.0001, Math.min(20, Number.isFinite(q) ? q : 0.7));
+  }
+
   init() {
     if (this.initialized) return;
 
@@ -146,7 +150,7 @@ export class AudioEngine {
   // --- Karplus-Strong Plucked String Synthesis (Shamisen) ---
   playShamisenPluck(freq = 440.0, duration = 1.6, velocity = 0.65, when = null) {
     if (!this.ctx || this.ctx.state !== 'running' || this.activeVoices >= this.maxVoices) return;
-    const now = when ?? this.ctx.currentTime;
+    const now = Math.max(this.ctx.currentTime, when ?? this.ctx.currentTime);
     const safeFreq = this.clampFreq(freq);
     const sampleRate = this.ctx.sampleRate;
     const period = Math.max(4, Math.round(sampleRate / safeFreq));
@@ -168,8 +172,8 @@ export class AudioEngine {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(this.clampFreq(safeFreq * 3.2), now);
-    filter.Q.setValueAtTime(0.7, now);
+    filter.frequency.setTargetAtTime(this.clampFreq(safeFreq * 3.2), now, 0.015);
+    filter.Q.setTargetAtTime(this.clampQ(0.7), now, 0.015);
 
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(velocity * 0.48, now);
@@ -187,6 +191,14 @@ export class AudioEngine {
     noiseSource.onended = () => { this.activeVoices = Math.max(0, this.activeVoices - 1); };
     noiseSource.start(now);
     noiseSource.stop(now + 1 / safeFreq);
+    setTimeout(() => {
+      try {
+        delay.disconnect();
+        filter.disconnect();
+        feedback.disconnect();
+        gain.disconnect();
+      } catch (e) {}
+    }, Math.ceil((duration + 0.15) * 1000));
   }
 
   // --- Taiko Drum Synthesis ---
@@ -324,8 +336,8 @@ export class AudioEngine {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(this.clampFreq(filterFreq), this.ctx.currentTime);
-    filter.Q.setValueAtTime(1.6, this.ctx.currentTime);
+    filter.frequency.setTargetAtTime(this.clampFreq(filterFreq), this.ctx.currentTime, 0.015);
+    filter.Q.setTargetAtTime(this.clampQ(1.6), this.ctx.currentTime, 0.015);
 
     const gain = this.ctx.createGain();
     const now = this.ctx.currentTime;
@@ -351,8 +363,8 @@ export class AudioEngine {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(340, this.ctx.currentTime);
-    filter.Q.setValueAtTime(0.7, this.ctx.currentTime);
+    filter.frequency.setTargetAtTime(this.clampFreq(340), this.ctx.currentTime, 0.015);
+    filter.Q.setTargetAtTime(this.clampQ(0.7), this.ctx.currentTime, 0.015);
 
     this.windGain = this.ctx.createGain();
     this.windGain.gain.setValueAtTime(0.14, this.ctx.currentTime);
@@ -376,8 +388,8 @@ export class AudioEngine {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1200, this.ctx.currentTime);
-    filter.Q.setValueAtTime(0.8, this.ctx.currentTime);
+    filter.frequency.setTargetAtTime(this.clampFreq(1200), this.ctx.currentTime, 0.015);
+    filter.Q.setTargetAtTime(this.clampQ(0.8), this.ctx.currentTime, 0.015);
 
     this.rainGain = this.ctx.createGain();
     this.rainGain.gain.setValueAtTime(0, this.ctx.currentTime);
@@ -396,7 +408,7 @@ export class AudioEngine {
 
   playBambooFlute(freq = 440.0, duration = 2.4, when = null) {
     if (!this.ctx || this.ctx.state !== 'running') return;
-    const now = when ?? this.ctx.currentTime;
+    const now = Math.max(this.ctx.currentTime, when ?? this.ctx.currentTime);
     const safeFreq = this.clampFreq(freq);
 
     const osc = this.ctx.createOscillator();
@@ -406,8 +418,8 @@ export class AudioEngine {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(this.clampFreq(safeFreq * 2.0), now);
-    filter.Q.setValueAtTime(0.7, now);
+    filter.frequency.setTargetAtTime(this.clampFreq(safeFreq * 2.0), now, 0.015);
+    filter.Q.setTargetAtTime(this.clampQ(0.7), now, 0.015);
 
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(0.001, now);

@@ -55,6 +55,9 @@ const canvas = document.getElementById('game-canvas');
 const debugOverlay = document.getElementById('debug-overlay');
 
 const savedSettings = saveSystem.load();
+events.on('brushstroke_collected', ({ id }) => {
+  saveSystem.addBrushstroke(id);
+});
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: true,

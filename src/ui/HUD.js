@@ -239,7 +239,13 @@ export class HUD {
       this.inkRow.appendChild(segWrap);
       this.inkSegments.push(segFill);
     }
+    this.brushstrokeBadge = document.createElement('span');
+    this.brushstrokeBadge.id = 'hud-brushstrokes';
+    this.brushstrokeBadge.style.cssText = 'font-size: 11px; font-weight: bold; color: #a8321f; margin-left: 8px; letter-spacing: 0.04em;';
+    this.inkRow.appendChild(this.brushstrokeBadge);
     this.topLeft.appendChild(this.inkRow);
+    this.updateBrushstrokeBadge();
+    events.on('brushstroke_collected', () => this.updateBrushstrokeBadge());
 
     this.container.appendChild(this.topLeft);
 
@@ -764,6 +770,7 @@ export class HUD {
 
     if (activeCh.id !== this.currentChapterId) {
       this.currentChapterId = activeCh.id;
+      this.updateBrushstrokeBadge();
       this.showChapterBanner(activeCh);
       const saved = saveSystem.load();
       if (activeCh.id > (saved.unlockedChapter || 1)) {
@@ -785,6 +792,15 @@ export class HUD {
     }
 
     this.dashMeter.innerText = `${activeCh.word} — ${activeCh.title}`;
+  }
+
+  updateBrushstrokeBadge() {
+    if (!this.brushstrokeBadge) return;
+    const saved = saveSystem.load();
+    const list = Array.isArray(saved.brushstrokes) ? saved.brushstrokes : [];
+    const chId = this.currentChapterId || 1;
+    const count = list.filter(id => typeof id === 'string' && id.startsWith(`bs_${chId}_`)).length;
+    this.brushstrokeBadge.innerText = `Brushstrokes ${count}/3`;
   }
 
   dispose() {

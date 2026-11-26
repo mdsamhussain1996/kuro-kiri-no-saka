@@ -169,6 +169,54 @@ async function main() {
     console.log(`✓ A4 Mash-Bot check passed for Ch${ch} boss:`, JSON.stringify(botRes));
   }
 
+  // 3b. Chapter 1 Lost Brushstrokes (3/3) + Bell (F) + Reload Persistence + Audio Unlock
+  await send('Page.navigate', { url: `${BASE_URL}/?chapter=1&skipIntro&debug` });
+  await waitForGame();
+  const bsTest = await evaluate(`(() => {
+    const g = window.__game;
+    localStorage.removeItem('KURO_KIRI_SAVE_V1');
+    g.audioEngine?.ensureContext?.();
+    g.loop.stop();
+    const ch1Stars = g.level.collectibles.filter(c => c.ch === 1);
+    for (const star of ch1Stars) {
+      g.player.aabb.x = star.x;
+      g.player.aabb.y = star.y;
+      g.loop.onFixedUpdate(1 / 60);
+    }
+    g.player.ink = 200;
+    g.input.onKeyDown({ code: 'KeyF', repeat: false, preventDefault: () => {} });
+    g.loop.onInputUpdate(1 / 60);
+    g.loop.onFixedUpdate(1 / 60);
+    g.hud.update(g.player);
+    return {
+      starCount: ch1Stars.length,
+      allCollected: ch1Stars.every(c => c.collected && !c.mesh.visible),
+      hudText: document.getElementById('hud-brushstrokes')?.innerText,
+      saveRaw: localStorage.getItem('KURO_KIRI_SAVE_V1'),
+      chId: g.hud.currentChapterId,
+      starIds: ch1Stars.map(c => c.id),
+      bellRings: g.level.bellRings.length,
+      finite: Number.isFinite(g.player.aabb.x) && Number.isFinite(g.player.aabb.y)
+    };
+  })()`);
+  assert(
+    bsTest.starCount === 3 && bsTest.allCollected && bsTest.hudText === 'Brushstrokes 3/3' && bsTest.bellRings > 0 && bsTest.finite,
+    `Ch1 Brushstrokes + Bell test failed: ${JSON.stringify(bsTest)}`
+  );
+  // Reload and verify collected stars remain hidden
+  await send('Page.navigate', { url: `${BASE_URL}/?chapter=1&skipIntro` });
+  await waitForGame();
+  const reloadCheck = await evaluate(`(() => {
+    const g = window.__game;
+    const ch1Stars = g.level.collectibles.filter(c => c.ch === 1);
+    return {
+      allHidden: ch1Stars.every(c => c.collected && !c.mesh.visible),
+      hudText: document.getElementById('hud-brushstrokes')?.innerText
+    };
+  })()`);
+  assert(reloadCheck.allHidden && reloadCheck.hudText === 'Brushstrokes 3/3', `Brushstrokes reload persistence failed: ${JSON.stringify(reloadCheck)}`);
+  console.log('✓ Ch1 3/3 Lost Brushstrokes + Bell (F) + reload persistence verified');
+
   // 4. Verify zero console errors & zero console warnings (including BiquadFilterNode)
   assert(consoleErrors.length === 0, `Console errors: ${consoleErrors.join('; ')}`);
   assert(consoleWarnings.length === 0, `Console warnings: ${consoleWarnings.join('; ')}`);

@@ -17,7 +17,7 @@ export class SaveSystem {
       muted: false,
       reduceShake: false,
       unlockedChapter: 1,
-      brushstrokes: {},
+      brushstrokes: [],
       haikus: [],
       chapterRanks: {},
       postCampaignUnlocked: false,
@@ -34,13 +34,26 @@ export class SaveSystem {
       if (typeof localStorage !== 'undefined') {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
-          return { ...this.getInitialData(), ...JSON.parse(raw) };
+          const merged = { ...this.getInitialData(), ...JSON.parse(raw) };
+          merged.brushstrokes = Array.isArray(merged.brushstrokes) ? merged.brushstrokes : [];
+          return merged;
         }
       }
     } catch (e) {
       console.warn('SaveSystem: localStorage unavailable, using in-memory save', e);
     }
-    return this._memSave || this.getInitialData();
+    const mem = this._memSave || this.getInitialData();
+    mem.brushstrokes = Array.isArray(mem.brushstrokes) ? mem.brushstrokes : [];
+    return mem;
+  }
+
+  static addBrushstroke(id) {
+    if (!id) return;
+    const data = this.load();
+    if (!data.brushstrokes.includes(id)) {
+      data.brushstrokes.push(id);
+      this.save(data);
+    }
   }
 
   static save(data) {

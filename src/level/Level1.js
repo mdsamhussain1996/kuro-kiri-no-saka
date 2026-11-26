@@ -4,6 +4,8 @@
 
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
+import { events } from '../core/EventBus.js';
+import { saveSystem } from '../core/SaveSystem.js';
 import { AABB } from '../physics/Collision.js';
 import { LEVEL1_DATA } from './level1.data.js';
 import { BambooStalk } from './Bamboo.js';
@@ -205,28 +207,32 @@ export class Level1 {
     // 10. Lost Brushstrokes (3 per chapter)
     this.collectibles = [];
     const strokes = [
-      { ch: 1, x: 22, y: 5.5 }, { ch: 1, x: 35, y: 9.0 }, { ch: 1, x: 49, y: 13.0 },
+      { ch: 1, x: 22, y: 5.5 }, { ch: 1, x: 35, y: 9.0 }, { ch: 1, x: 42, y: 11.0 },
       { ch: 2, x: 65, y: 14.5 }, { ch: 2, x: 85, y: 18.2 }, { ch: 2, x: 96, y: 19.0 },
       { ch: 3, x: 130, y: 15.0 }, { ch: 3, x: 163, y: 34.0 }, { ch: 3, x: 185, y: 26.5 },
       { ch: 5, x: 330, y: 55.0 }, { ch: 5, x: 375, y: 58.0 }, { ch: 5, x: 440, y: 65.0 },
       { ch: 7, x: 610, y: 80.0 }, { ch: 7, x: 670, y: 86.0 }, { ch: 7, x: 730, y: 92.0 },
     ];
+    const savedBrushstrokes = saveSystem.load().brushstrokes || [];
     for (let i = 0; i < strokes.length; i++) {
       const st = strokes[i];
+      const id = `bs_${st.ch}_${i}`;
+      const alreadyCollected = Array.isArray(savedBrushstrokes) && savedBrushstrokes.includes(id);
       const orb = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.32, 0),
         new THREE.MeshBasicMaterial({ color: 0xa8321f })
       );
       orb.position.set(st.x, st.y, 0);
+      orb.visible = !alreadyCollected;
       this.scene.add(orb);
       this.collectibles.push({
-        id: `bs_${st.ch}_${i}`,
+        id,
         type: 'brushstroke',
         ch: st.ch,
         x: st.x,
         y: st.y,
         mesh: orb,
-        collected: false,
+        collected: alreadyCollected,
       });
     }
   }

@@ -1,6 +1,7 @@
 // Pause Menu & Settings Modal (Resume, Restart Chapter, Unlocked Chapter Select, Controls Tabs, Audio & Quality)
 
 import { CONFIG } from '../config.js';
+import { events } from '../core/EventBus.js';
 import { saveSystem } from '../core/SaveSystem.js';
 import { SUMIRO_CHAPTERS } from './HUD.js';
 
@@ -11,6 +12,10 @@ export class PauseMenu {
     this.callbacks = callbacks;
     this.isOpen = false;
     this.controlsTab = 'keyboard';
+    this.currentChapterId = 1;
+    events.on('chapter_changed', (ch) => {
+      if (ch?.id) this.currentChapterId = ch.id;
+    });
 
     this.container = document.createElement('div');
     this.container.id = 'pause-menu';
@@ -59,6 +64,8 @@ export class PauseMenu {
     const C = CONFIG.CONTROLS;
     const unlocked = Math.max(1, saved.unlockedChapter || 1);
     const chapters = SUMIRO_CHAPTERS.filter(ch => ch.id <= unlocked);
+    const strokes = Array.isArray(saved.brushstrokes) ? saved.brushstrokes : [];
+    const chStrokes = strokes.filter(id => typeof id === 'string' && id.startsWith(`bs_${this.currentChapterId}_`)).length;
 
     const keyboardRows = Object.values(C)
       .map(c => `<div><strong>${c.label}:</strong> ${c.display}</div>`)
@@ -75,6 +82,7 @@ export class PauseMenu {
 
     this.card.innerHTML = `
       <h2 style="font-family:'Yuji Syuku',serif;font-size:28px;margin:0;letter-spacing:2px;">PAUSED</h2>
+      <div id="pm-brushstrokes" style="font-size:12px;font-weight:bold;color:#a8321f;letter-spacing:1px;">Brushstrokes ${chStrokes}/3 (Total ${strokes.length}/15)</div>
       <div style="display:flex;gap:8px;width:100%;">
         <button id="pm-resume" style="flex:1;padding:10px;background:#141413;color:#eae5d9;border:none;border-radius:4px;font-weight:bold;letter-spacing:1.5px;cursor:pointer;">RESUME</button>
         <button id="pm-restart" style="flex:1;padding:10px;background:#a8321f;color:#eae5d9;border:none;border-radius:4px;font-weight:bold;letter-spacing:1.5px;cursor:pointer;">RESTART CHAPTER</button>

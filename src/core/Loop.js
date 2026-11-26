@@ -22,6 +22,7 @@ export class Loop {
     this.timeScale = 1.0;
 
     this._rafId = null;
+    this._errorLogged = false;
     this._tick = this.tick.bind(this);
   }
 
@@ -61,58 +62,66 @@ export class Loop {
   tick(currentTime) {
     if (!this.running) return;
 
-    let delta = (currentTime - this.lastTime) / 1000;
-    this.lastTime = currentTime;
+    try {
+      let delta = (currentTime - this.lastTime) / 1000;
+      this.lastTime = currentTime;
 
-    // Clamp delta to prevent spiral of death / floor tunneling on lag spikes
-    if (delta > this.maxDelta) {
-      delta = this.maxDelta;
-    }
+      // Clamp delta to prevent spiral of death / floor tunneling on lag spikes
+      if (delta > this.maxDelta) {
+        delta = this.maxDelta;
+      }
 
-    if (!this.paused) {
-      // Process hit-stop
-      if (this.hitStopRemaining > 0) {
-        this.hitStopRemaining -= delta;
-        // Still render current state without advancing physics
+      if (!this.paused) {
+        // Process hit-stop
+        if (this.hitStopRemaining > 0) {
+          this.hitStopRemaining -= delta;
+          // Still render current state without advancing physics
+          if (this.onRender) {
+            this.onRender(0);
+          }
+          return;
+        }
+
+        const scaledDelta = delta * this.timeScale;
+        this.accumulator += scaledDelta;
+
+        // Update input buffer timers with real delta
+        if (this.onInputUpdate) {
+          this.onInputUpdate(delta);
+        }
+
+        // Consume fixed simulation steps
+        let stepsTaken = 0;
+        const maxSubSteps = 8;
+
+        while (this.accumulator >= this.timeStep && stepsTaken < maxSubSteps) {
+          if (this.onFixedUpdate) {
+            this.onFixedUpdate(this.timeStep);
+          }
+          this.accumulator -= this.timeStep;
+          stepsTaken++;
+        }
+
+        // If still lagging behind after maxSubSteps, discard accumulator to avoid spiraling
+        if (this.accumulator >= this.timeStep) {
+          this.accumulator = 0;
+        }
+
+        // Calculate interpolation alpha for render smoothing
+        const alpha = this.accumulator / this.timeStep;
         if (this.onRender) {
-          this.onRender(0);
+          this.onRender(alpha);
         }
+      }
+    } catch (err) {
+      if (!this._errorLogged) {
+        this._errorLogged = true;
+        console.error('Loop tick error:', err);
+      }
+    } finally {
+      if (this.running) {
         this._rafId = requestAnimationFrame(this._tick);
-        return;
-      }
-
-      const scaledDelta = delta * this.timeScale;
-      this.accumulator += scaledDelta;
-
-      // Update input buffer timers with real delta
-      if (this.onInputUpdate) {
-        this.onInputUpdate(delta);
-      }
-
-      // Consume fixed simulation steps
-      let stepsTaken = 0;
-      const maxSubSteps = 8;
-
-      while (this.accumulator >= this.timeStep && stepsTaken < maxSubSteps) {
-        if (this.onFixedUpdate) {
-          this.onFixedUpdate(this.timeStep);
-        }
-        this.accumulator -= this.timeStep;
-        stepsTaken++;
-      }
-
-      // If still lagging behind after maxSubSteps, discard accumulator to avoid spiraling
-      if (this.accumulator >= this.timeStep) {
-        this.accumulator = 0;
-      }
-
-      // Calculate interpolation alpha for render smoothing
-      const alpha = this.accumulator / this.timeStep;
-      if (this.onRender) {
-        this.onRender(alpha);
       }
     }
-
-    this._rafId = requestAnimationFrame(this._tick);
   }
 }
