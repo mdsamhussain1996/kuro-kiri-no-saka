@@ -47,8 +47,8 @@ export const SUMIRO_CHAPTERS = [
     poem: 'No monk has rung the bronze bell in forty winters.',
     minX: 102,
     maxX: 238,
-    spawnX: 172,
-    spawnY: 23.0,
+    spawnX: 112,
+    spawnY: 16.5,
     dash: true,
   },
   {

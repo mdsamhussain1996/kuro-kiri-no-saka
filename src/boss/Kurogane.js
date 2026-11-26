@@ -45,7 +45,8 @@ export class Kurogane {
         this.retriesInPhase = 0;
       }
       events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
-      this.fsm.changeState('Decide');
+      // Back to the Torii: walking into the arena again replays the intro and re-locks the walls
+      this.fsm.changeState('Dormant');
     });
     this.isVulnerable = false;
     this.isStaggered = false;

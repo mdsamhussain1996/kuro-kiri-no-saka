@@ -74,6 +74,15 @@ export class CollisionSystem {
     return item;
   }
 
+  removeSolid(ref) {
+    if (!ref) return false;
+    const i = this.solids.indexOf(ref);
+    if (i !== -1) { this.solids.splice(i, 1); return true; }
+    const j = this.oneWays.indexOf(ref);
+    if (j !== -1) { this.oneWays.splice(j, 1); return true; }
+    return false;
+  }
+
   addOneWay(box, options = {}) {
     const item = {
       aabb: box,

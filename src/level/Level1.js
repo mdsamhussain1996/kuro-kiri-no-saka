@@ -37,6 +37,14 @@ export class Level1 {
     this.inkSplash = inkSplash;
     this.shockwaves = new InkShockwaveManager(scene);
 
+    // Kurogane arena walls: only up while the fight is running
+    this.arenaLockBoxes = [];
+    this.arenaLockRefs = [];
+    events.on('boss_intro_start', () => this.setArenaLocked(true));
+    events.on('boss_defeated', () => this.setArenaLocked(false));
+    events.on('player_died', () => this.setArenaLocked(false));
+    events.on('player:respawn', () => this.setArenaLocked(false));
+
     this.solidMeshes = [];
     this.bambooStalks = [];
     this.swingingLanterns = [];
@@ -386,6 +394,11 @@ export class Level1 {
 
     for (const s of solids) {
       const box = new AABB(s.x, s.y, s.w, s.h);
+      if (s.arenaLock) {
+        // Arena walls stay down until the boss intro starts (see setArenaLocked)
+        (this.arenaLockBoxes ||= []).push(box);
+        continue;
+      }
       const solidRef = this.collision.addSolid(box, {
         runnable: s.runnable ?? false,
         crumbling: s.crumbling ?? false,
@@ -539,10 +552,10 @@ export class Level1 {
 
     // 3. Organic Multi-Faceted Sumi-e Pine Needle Clusters (Replacing smooth oval spheres!)
     const canopyCenters = [
-      { x: lean * 2.1,  y: 2.2,  z: 0.1,  r: 0.65, count: 5 },
-      { x: -lean * 0.9, y: 3.1,  z: 0.0,  r: 0.62, count: 5 },
-      { x: lean * 2.7,  y: 3.7,  z: 0.05, r: 0.68, count: 5 },
-      { x: lean * 1.2,  y: 4.45, z: 0.0,  r: 0.82, count: 7 },
+      { x: lean * 2.1, y: 2.2, z: 0.1, r: 0.65, count: 5 },
+      { x: -lean * 0.9, y: 3.1, z: 0.0, r: 0.62, count: 5 },
+      { x: lean * 2.7, y: 3.7, z: 0.05, r: 0.68, count: 5 },
+      { x: lean * 1.2, y: 4.45, z: 0.0, r: 0.82, count: 7 },
     ];
 
     for (const c of canopyCenters) {
@@ -937,6 +950,16 @@ export class Level1 {
   }
 
   // --- Fixed Update (60 Hz) ---
+  setArenaLocked(locked) {
+    if (locked && this.arenaLockRefs.length === 0) {
+      this.arenaLockRefs = this.arenaLockBoxes.map((box) =>
+        this.collision.addSolid(new AABB(box.x, box.y, box.width, box.height)));
+    } else if (!locked && this.arenaLockRefs.length) {
+      for (const ref of this.arenaLockRefs) this.collision.removeSolid(ref);
+      this.arenaLockRefs = [];
+    }
+  }
+
   fixedUpdate(dt, player) {
     for (const item of this.solidMeshes) {
       if (item.solidRef.crumbling) {

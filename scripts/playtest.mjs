@@ -170,11 +170,11 @@ async function main() {
   }
 
   // 3b. Chapter 1 Lost Brushstrokes (3/3) + Bell (F) + Reload Persistence + Audio Unlock
+  await evaluate(`localStorage.removeItem('KURO_KIRI_SAVE_V1')`);
   await send('Page.navigate', { url: `${BASE_URL}/?chapter=1&skipIntro&debug` });
   await waitForGame();
   const bsTest = await evaluate(`(() => {
     const g = window.__game;
-    localStorage.removeItem('KURO_KIRI_SAVE_V1');
     g.audioEngine?.ensureContext?.();
     g.loop.stop();
     const ch1Stars = g.level.collectibles.filter(c => c.ch === 1);
@@ -194,6 +194,7 @@ async function main() {
       hudText: document.getElementById('hud-brushstrokes')?.innerText,
       saveRaw: localStorage.getItem('KURO_KIRI_SAVE_V1'),
       chId: g.hud.currentChapterId,
+      px: g.player.aabb.x,
       starIds: ch1Stars.map(c => c.id),
       bellRings: g.level.bellRings.length,
       finite: Number.isFinite(g.player.aabb.x) && Number.isFinite(g.player.aabb.y)
@@ -216,6 +217,102 @@ async function main() {
   })()`);
   assert(reloadCheck.allHidden && reloadCheck.hudText === 'Brushstrokes 3/3', `Brushstrokes reload persistence failed: ${JSON.stringify(reloadCheck)}`);
   console.log('✓ Ch1 3/3 Lost Brushstrokes + Bell (F) + reload persistence verified');
+
+  // 3c. Real Walk-In Route Tests (No ?chapter=): Ch3 -> Kurogane (die -> respawn -> win -> Ch5), Shirayuki, Sumi-Ou
+  await send('Page.navigate', { url: `${BASE_URL}/?skipIntro` });
+  await waitForGame();
+  const walkInRes = await evaluate(`(() => {
+    const g = window.__game;
+    g.loop.stop();
+    const trace = [];
+
+    // Helper: walk/jump/dash right from (startX, startY) to targetX
+    function walkTo(startX, startY, targetX, jumpAtX = null, dashAtX = null, maxSteps = 360) {
+      g.player.aabb.x = startX;
+      g.player.aabb.y = startY;
+      g.player.velocity.x = 0;
+      g.player.velocity.y = 0;
+      g.player.health = 5;
+      g.player.dashCooldownTimer = 0;
+      g.player.hasAirDash = true;
+      g.player.hasInkStep = true;
+      g.player.fsm.changeState('Idle');
+      let jumped = false, dashed = false;
+      g.input.keysDown.clear();
+      g.input.keysDown.add('KeyD');
+      for (let s = 0; s < maxSteps; s++) {
+        if (!jumped && jumpAtX !== null && g.player.aabb.x >= jumpAtX) {
+          g.input.onKeyDown({ code: 'Space', repeat: false, preventDefault: () => {} });
+          jumped = true;
+        }
+        if (!dashed && dashAtX !== null && g.player.aabb.x >= dashAtX) {
+          g.input.onKeyDown({ code: 'ShiftLeft', repeat: false, preventDefault: () => {} });
+          dashed = true;
+        }
+        g.loop.onInputUpdate(1 / 60);
+        g.loop.onFixedUpdate(1 / 60);
+        if (s % 20 === 0) trace.push([+g.player.aabb.x.toFixed(1), +g.player.aabb.y.toFixed(1)]);
+        if (g.player.aabb.x >= targetX) break;
+      }
+      g.input.keysDown.clear();
+      return { x: +g.player.aabb.x.toFixed(2), y: +g.player.aabb.y.toFixed(2) };
+    }
+
+    // A) Ch3 checkpoint (226, 47.9) -> walk into Kurogane arena (x >= 246)
+    const entryPos = walkTo(226, 47.9, 246, 239.5, null, 240);
+    const locksAfterEntry = g.level.arenaLockRefs.length;
+
+    // B) Die inside arena -> respawn -> walls drop & boss returns to Dormant
+    g.player.takeDamage(99, 260);
+    for (let s = 0; s < 100 && g.player.fsm.currentStateName === 'Dead'; s++) {
+      g.loop.onFixedUpdate(1 / 60);
+    }
+    const locksAfterRespawn = g.level.arenaLockRefs.length;
+    const bossStateAfterRespawn = g.level.boss.fsm.currentStateName;
+
+    // Re-enter arena -> walls lock again
+    const reentryPos = walkTo(243, 49.9, 248, null, null, 120);
+    const locksAfterReentry = g.level.arenaLockRefs.length;
+
+    // C) Defeat Kurogane -> walls drop -> walk out into Ch5 (x >= 287)
+    if (g.level.boss.fsm.isInState('Intro')) g.level.boss.fsm.changeState('Decide');
+    g.level.boss.isVulnerable = true;
+    g.level.boss.takeDamage(999, true, g.player.aabb.x);
+    for (let s = 0; s < 30; s++) g.loop.onFixedUpdate(1 / 60);
+    const locksAfterWin = g.level.arenaLockRefs.length;
+    const ch5Pos = walkTo(270, 50.0, 287, 277.0, 279.5, 180);
+
+    // D) Walk-in to Lady Shirayuki (Ch5 last ledge 496, 73.6 -> arena x >= 510)
+    const shiraPos = walkTo(496, 73.6, 510, 498.2, 500.5, 180);
+    const shiraActive = g.level.bossShirayuki.isActive;
+
+    // E) Walk-in to Lord Sumi-Ou (Ch7 last ledge 768, 97.6 -> arena x >= 780)
+    const sumiPos = walkTo(768, 97.6, 780, 770.2, 772.5, 180);
+    const sumiActive = g.level.bossSumiOu.isActive;
+
+    return {
+      entryPos, locksAfterEntry,
+      locksAfterRespawn, bossStateAfterRespawn,
+      reentryPos, locksAfterReentry,
+      locksAfterWin, ch5Pos,
+      shiraPos, shiraActive,
+      sumiPos, sumiActive,
+      traceCount: trace.length
+    };
+  })()`);
+  assert(
+    walkInRes.entryPos.x >= 246 &&
+    walkInRes.locksAfterEntry >= 2 &&
+    walkInRes.locksAfterRespawn === 0 &&
+    walkInRes.bossStateAfterRespawn === 'Dormant' &&
+    walkInRes.locksAfterReentry >= 2 &&
+    walkInRes.locksAfterWin === 0 &&
+    walkInRes.ch5Pos.x >= 287 &&
+    walkInRes.shiraPos.x >= 510 && walkInRes.shiraActive &&
+    walkInRes.sumiPos.x >= 780 && walkInRes.sumiActive,
+    `Walk-in route test failed: ${JSON.stringify(walkInRes)}`
+  );
+  console.log('✓ Real Walk-In Route Tests PASSED:', JSON.stringify(walkInRes));
 
   // 4. Verify zero console errors & zero console warnings (including BiquadFilterNode)
   assert(consoleErrors.length === 0, `Console errors: ${consoleErrors.join('; ')}`);

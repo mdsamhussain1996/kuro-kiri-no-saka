@@ -17,7 +17,7 @@ export const LEVEL1_DATA = {
       { x: 4, y: -0.5, w: 16, h: 1.0, color: 0x5c5b57 },
 
       // 2. Fractured stone steps rising
-      { x: 15, y: 1.5, w: 5, h: 0.8, color: 0x6e6c64 },
+      { x: 15, y: 1.5, w: 6, h: 0.8, color: 0x6e6c64 },
       { x: 22, y: 3.5, w: 4, h: 0.8, color: 0x6e6c64 },
       { x: 28, y: 5.5, w: 4, h: 0.8, color: 0x6e6c64 },
 
@@ -29,7 +29,7 @@ export const LEVEL1_DATA = {
       { x: 49, y: 11.0, w: 7, h: 1.2, color: 0x5c5b57 },
 
       // 5. Ink Shrine Plateau
-      { x: 57, y: 12.0, w: 8, h: 1.0, color: 0x5c5b57 },
+      { x: 57, y: 12.0, w: 9, h: 1.0, color: 0x5c5b57 },
 
       // 6. Dash-gap landing plateau (12 units across chasm, requires Ink Step)
       { x: 74, y: 12.5, w: 8, h: 1.0, color: 0x5c5b57 },
@@ -65,7 +65,7 @@ export const LEVEL1_DATA = {
   act2: {
     solids: [
       // 1. Entrance plateau before storm drop
-      { x: 112, y: 15.0, w: 6, h: 1.0, color: 0x484640 },
+      { x: 112, y: 15.0, w: 8, h: 1.0, color: 0x484640 },
 
       // 2. Ravine floor / roots under bamboo stalks
       { x: 128, y: 12.0, w: 32, h: 1.5, color: 0x3d352e },
@@ -127,14 +127,14 @@ export const LEVEL1_DATA = {
   act3: {
     solids: [
       // 1. Approach stone stairs
-      { x: 234, y: 47.5, w: 6, h: 0.8, color: 0x5c5b57 },
+      { x: 236, y: 46.6, w: 12, h: 0.8, color: 0x5c5b57 }, // flush with checkpoint ledge (top 47), spans 230-242: no slot after checkpoint, no gap before arena
 
       // 2. Colossal Boss Arena Plateau (36 units wide)
       { x: 260, y: 48.0, w: 36, h: 2.0, color: 0x3d3a35 },
 
       // 3. Invisible Arena Boundary Barriers (prevent exiting arena during boss)
-      { x: 241, y: 55.0, w: 1, h: 14.0, color: 0x000000, invisible: true },
-      { x: 279, y: 55.0, w: 1, h: 14.0, color: 0x000000, invisible: true },
+      { x: 241, y: 55.0, w: 1, h: 14.0, color: 0x000000, invisible: true, arenaLock: true },
+      { x: 279, y: 55.0, w: 1, h: 14.0, color: 0x000000, invisible: true, arenaLock: true },
     ],
 
     checkpoints: [
