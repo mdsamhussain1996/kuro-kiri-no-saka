@@ -14,6 +14,9 @@ export class SaveSystem {
       volumeMaster: 0.8,
       volumeMusic: 0.65,
       volumeSFX: 0.85,
+      muted: false,
+      reduceShake: false,
+      unlockedChapter: 1,
       quality: 'high', // 'high' | 'low'
     };
   }

@@ -601,6 +601,10 @@ export class KuroController {
     if (Math.abs(this.velocity.y) < CONFIG.PLAYER.apexHangVelocity) {
       g *= CONFIG.PLAYER.apexGravityScale;
     }
+    // Fast-fall when holding Down in mid-air
+    if (this.input.axisY < 0 && this.velocity.y <= 0) {
+      g *= 1.35;
+    }
     this.velocity.y += g * dt;
     if (this.velocity.y < CONFIG.PLAYER.maxFallSpeed) {
       this.velocity.y = CONFIG.PLAYER.maxFallSpeed;
@@ -614,8 +618,25 @@ export class KuroController {
     if (this.ledgeGrabCooldown > 0) this.ledgeGrabCooldown -= dt;
     if (this.invincibilityTimer > 0) this.invincibilityTimer -= dt;
 
-    // Check one-way drop through
-    const dropThrough = (this.input.axisY < 0) && this.input.jumpBuffered;
+    // Track hold-Down fallback (0.15s) for one-way platform drop-through
+    if (this.input.axisY < 0 && this.coyoteTimer > 0) {
+      this.holdDownTimer = (this.holdDownTimer || 0) + dt;
+    } else {
+      this.holdDownTimer = 0;
+    }
+    const dropThrough = (this.input.axisY < 0) && (this.input.jumpBuffered || this.holdDownTimer >= 0.15);
+
+    // Footstep cadence when running on ground
+    if (this.fsm.isInState('Run') && this.coyoteTimer > 0 && Math.abs(this.velocity.x) > 3.5) {
+      this.footstepTimer = (this.footstepTimer || 0) - dt;
+      if (this.footstepTimer <= 0) {
+        this.footstepTimer = 0.24;
+        const surface = this.groundRef?.isBamboo ? 'bamboo' : (this.groundRef?.type === 'oneWay' ? 'wood' : 'stone');
+        events.emit('player:footstep', { surface, x: this.aabb.x });
+      }
+    } else {
+      this.footstepTimer = 0.05;
+    }
 
     // Run FSM update
     this.fsm.fixedUpdate(dt);
@@ -703,6 +724,13 @@ export class KuroController {
   // --- Render Interpolation ---
   render(alpha) {
     this.meshGroup.position.x = this.aabb.x;
+    if (this.model?.group) {
+      if (this.invincibilityTimer > 0 && !this.fsm.isInState('Dead')) {
+        this.model.group.visible = Math.floor(this.invincibilityTimer * 24) % 2 === 0;
+      } else {
+        this.model.group.visible = !this.fsm.isInState('Dead');
+      }
+    }
     this.meshGroup.position.y = this.aabb.y;
 
     // Smooth turn flip (0.08s) per §3 bug 5

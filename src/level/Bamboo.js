@@ -120,6 +120,14 @@ export class BambooStalk {
     this.topAABB.x = tipX;
     this.topAABB.y = tipY;
 
+    // Visual cue for 1.5x rebound peak window (stalk tip turns warm vermilion-gold)
+    const atReboundPeak = this.playerOnTop && Math.abs(this.deflection) > this.maxDeflection * 0.55;
+    if (this.segments[0]?.children[0]?.material) {
+      this.segments[0].children[0].material.emissive.setHex(atReboundPeak ? 0xa8321f : 0x000000);
+      this.segments[0].children[0].material.emissiveIntensity = atReboundPeak ? 0.65 : 0;
+    }
+    this.topAABB.y = tipY;
+
     // Update 3D visual curvature across segments
     const curvaturePerSegment = tipAngle / this.segmentCount;
     for (let i = 0; i < this.segments.length; i++) {

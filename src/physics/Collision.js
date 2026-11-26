@@ -187,10 +187,19 @@ export class CollisionSystem {
             solid.crumbleTimer = 0.6; // 0.6s collapse per §6
           }
         } else if (velocity.y > 0) {
-          // Jumping up into solid ceiling
-          entityAABB.y = solid.aabb.minY - entityAABB.halfHeight - skin;
-          velocity.y = 0;
-          result.ceiling = true;
+          // Head-bump corner correction (within 0.22u of a solid edge, nudge around instead of stopping)
+          const overlapRight = entityAABB.maxX - solid.aabb.minX;
+          const overlapLeft = solid.aabb.maxX - entityAABB.minX;
+          if (overlapRight > 0 && overlapRight <= 0.22) {
+            entityAABB.x = solid.aabb.minX - entityAABB.halfWidth - skin;
+          } else if (overlapLeft > 0 && overlapLeft <= 0.22) {
+            entityAABB.x = solid.aabb.maxX + entityAABB.halfWidth + skin;
+          } else {
+            // Jumping up into solid ceiling
+            entityAABB.y = solid.aabb.minY - entityAABB.halfHeight - skin;
+            velocity.y = 0;
+            result.ceiling = true;
+          }
         }
       }
     }

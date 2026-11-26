@@ -33,11 +33,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run milestone verification tests
+      - name: Run milestone & input verification tests
         run: |
           node src/test_m3.js
           node src/test_m4.js
           node src/test_m5.js
+          node tests/input.test.js
 
       - name: Build with Vite
         run: npm run build

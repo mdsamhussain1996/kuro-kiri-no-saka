@@ -1,6 +1,6 @@
 // KURO: Kiri-no-Saka — Complete 3-Act Campaign Main Entry Point
 // Integrates Custom GLSL 3-Band Sumi-e Shader, Tapered Calligraphy InkFX, CameraRig,
-// Lantern Grapple Dash, Projectile Deflection, and Acts I, II, and III with 3 Bosses.
+// Lantern Grapple Dash, Projectile Deflection, Unified Input, and Acts I, II, and III with 3 Bosses.
 
 import * as THREE from 'three';
 import { CONFIG } from './config.js';
@@ -9,7 +9,7 @@ import { Input } from './core/Input.js';
 import { CameraRig } from './core/CameraRig.js';
 import { CollisionSystem } from './physics/Collision.js';
 import { combatManager } from './physics/Hitbox.js';
-import { KuroController } from './entities/KuroController.js';
+import { KuroController } from './player/KuroController.js';
 import { InkAfterimageManager } from './fx/InkAfterimage.js';
 import { InkRippleManager } from './fx/InkRipple.js';
 import { InkSplashManager } from './fx/InkFX.js';
@@ -20,18 +20,41 @@ import { ParallaxBackground } from './level/Parallax.js';
 import { PostProcessingSystem } from './render/PostFX.js';
 import { Level1 } from './level/Level1.js';
 import { LEVEL1_DATA } from './level/level1.data.js';
-import { SoundEngine } from './audio/SoundEngine.js';
+import { AudioEngine } from './audio/AudioEngine.js';
 import { HUD, SUMIRO_CHAPTERS } from './ui/HUD.js';
 import { DialogueCard } from './ui/DialogueCard.js';
 import { PauseMenu } from './ui/PauseMenu.js';
 import { EndCard } from './ui/EndCard.js';
 import { IntroInkDrop } from './cinematics/IntroInkDrop.js';
 import { events } from './core/EventBus.js';
+import { saveSystem } from './core/SaveSystem.js';
+
+// --- Loading Veil (prevents blank parchment flash & holds timer until player has control) ---
+const loadingVeil = document.createElement('div');
+loadingVeil.id = 'kuro-loading-veil';
+loadingVeil.style.cssText = `
+  position: fixed;
+  inset: 0;
+  background: #c4b798;
+  color: #141413;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Palatino Linotype', Georgia, serif;
+  font-style: italic;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+  z-index: 60;
+  transition: opacity 0.45s ease;
+`;
+loadingVeil.innerText = '黒 — Preparing the ink...';
+document.body.appendChild(loadingVeil);
 
 // --- Three.js Setup ---
 const canvas = document.getElementById('game-canvas');
 const debugOverlay = document.getElementById('debug-overlay');
 
+const savedSettings = saveSystem.load();
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: true,
@@ -39,10 +62,16 @@ const renderer = new THREE.WebGLRenderer({
   powerPreference: 'high-performance',
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+function applyQualityPreset(preset) {
+  const isLow = preset === 'low';
+  renderer.setPixelRatio(isLow ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = !isLow;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+}
+applyQualityPreset(savedSettings.quality || 'high');
+
 renderer.setClearColor(new THREE.Color(CONFIG.PALETTE.parchment));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(CONFIG.PALETTE.parchment);
@@ -59,6 +88,7 @@ camera.rotation.x = -THREE.MathUtils.degToRad(CONFIG.CAMERA.tiltDeg);
 
 const params = new URLSearchParams(window.location.search);
 const cameraRig = new CameraRig(camera, params.get('cam') === '3d' ? 1 : 0);
+cameraRig.reduceShake = !!savedSettings.reduceShake;
 
 // Lighting
 const ambientLight = new THREE.AmbientLight(0xfffbf0, 0.78);
@@ -83,13 +113,12 @@ const petals = new InkPetalSystem(scene);
 const crows = new InkCrowFlock(scene);
 const parallax = new ParallaxBackground(scene);
 const postFX = new PostProcessingSystem(renderer, scene, camera);
-const audioEngine = new SoundEngine();
+const audioEngine = new AudioEngine();
 
 events.on('lightning_flash', () => {
-  postFX.flashLightning();
+  if (!cameraRig.reduceShake) postFX.flashLightning();
 });
 
-// Panoramic Sunrise Parchment Wash upon Campaign Finale Victory
 events.on('campaign_sunrise_victory', () => {
   scene.background = new THREE.Color(0xfff3db);
   renderer.setClearColor(new THREE.Color(0xfff3db));
@@ -98,6 +127,11 @@ events.on('campaign_sunrise_victory', () => {
 });
 
 let loop;
+let pausedByUser = false;
+let pausedByVisibility = false;
+let paintCooldownTimer = 0;
+let bellCooldownTimer = 0;
+let firstControlFrame = false;
 
 // --- Initialize 3-Act Campaign Master Assembler ---
 const level = new Level1({
@@ -106,7 +140,7 @@ const level = new Level1({
   inkSplash,
 });
 
-// URL parameter overrides for rapid testing & act/chapter/boss jumping
+// URL parameter overrides
 let spawnX = LEVEL1_DATA.spawn.x;
 let spawnY = LEVEL1_DATA.spawn.y;
 let startDashUnlocked = false;
@@ -156,8 +190,7 @@ player.swingingLanternsRef = level.swingingLanterns;
 
 cameraRig.snapTo(spawnX, spawnY);
 
-// --- UI Subsystems (with 3-Act / 8-Stage Campaign Jump Handler) ---
-const hud = new HUD((ch) => {
+function jumpToChapter(ch) {
   player.aabb.x = ch.spawnX;
   player.aabb.y = ch.spawnY;
   player.velocity.x = 0;
@@ -168,20 +201,49 @@ const hud = new HUD((ch) => {
   player.setCheckpoint(ch.spawnX, ch.spawnY);
   player.health = player.maxHealth;
   cameraRig.snapTo(ch.spawnX, ch.spawnY);
-});
+}
+
+// --- UI Subsystems ---
+const hud = new HUD(jumpToChapter, input);
 const dialogue = new DialogueCard();
 const endCard = new EndCard();
 
-// --- Innovative Sumi-e Powers & 3D Camera Perspective Toggle ---
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyE') {
-    level.paintInkBridge(player.aabb.x, player.aabb.y, player.facing);
-    events.emit('camera_shake', { amount: 0.14 });
-  } else if (e.code === 'KeyF') {
-    level.triggerBellResonance(player);
-    events.emit('camera_shake', { amount: 0.32 });
-  } else if (e.code === 'KeyV') {
-    cameraRig.cyclePerspective();
+input.onFirstGesture = () => {
+  audioEngine.ensureContext();
+  hud.setSoundUnlocked(true);
+};
+
+events.on('chapter_changed', (ch) => {
+  const weather = (ch.id === 3 || ch.id === 5 || ch.id === 6) ? 'rain' : 'clear';
+  const inBoss = (ch.id === 4 || ch.id === 6 || ch.id === 8);
+  audioEngine.setChapterContext(ch.id, weather, inBoss);
+});
+
+const pauseMenu = new PauseMenu(null, audioEngine, {
+  onResume: () => {
+    pausedByUser = false;
+    pauseMenu.close();
+    input.blocked = false;
+    if (!pausedByVisibility) loop.resume();
+  },
+  onRestartChapter: () => {
+    pausedByUser = false;
+    input.blocked = false;
+    const ch = SUMIRO_CHAPTERS.find(c => c.id === (hud.currentChapterId || 1)) || SUMIRO_CHAPTERS[0];
+    jumpToChapter(ch);
+    if (!pausedByVisibility) loop.resume();
+  },
+  onSelectChapter: (ch) => {
+    pausedByUser = false;
+    input.blocked = false;
+    jumpToChapter(ch);
+    if (!pausedByVisibility) loop.resume();
+  },
+  onShakeChange: (reduce) => {
+    cameraRig.reduceShake = !!reduce;
+  },
+  onQualityChange: (q) => {
+    applyQualityPreset(q);
   }
 });
 
@@ -190,21 +252,90 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  applyQualityPreset(saveSystem.load().quality || 'high');
 });
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
+    pausedByVisibility = true;
     loop.pause();
     input.onBlur();
   } else {
-    loop.resume();
+    pausedByVisibility = false;
+    if (!pausedByUser) {
+      loop.resume();
+    }
   }
 });
 
+// --- Unscaled Input Tick (runs before fixedUpdate so buffers use real dt) ---
+function onInputUpdate(dt) {
+  input.update(dt);
+
+  if (input.pausePressed) {
+    input.consumePause();
+    pausedByUser = !pausedByUser;
+    if (pausedByUser) {
+      pauseMenu.open();
+      input.onBlur();
+      input.blocked = true;
+      loop.pause();
+    } else {
+      pauseMenu.close();
+      input.blocked = false;
+      if (!pausedByVisibility) loop.resume();
+    }
+  }
+
+  if (input.mutePressed) {
+    input.consumeMute();
+    audioEngine.toggleMute();
+    if (pauseMenu.isOpen) pauseMenu.render();
+  }
+}
+
 // --- Fixed Update Loop (60 Hz) ---
 function onFixedUpdate(dt) {
-  input.update(dt);
+  if (!firstControlFrame) {
+    firstControlFrame = true;
+    hud.startRunTimer();
+  }
+
+  if (paintCooldownTimer > 0) paintCooldownTimer = Math.max(0, paintCooldownTimer - dt);
+  if (bellCooldownTimer > 0) bellCooldownTimer = Math.max(0, bellCooldownTimer - dt);
+
+  // Buffered Sumi-e Powers & Camera via unified Input (blocked while paused or in dialogue)
+  if (!dialogue.isVisible) {
+    if (input.paintBridgePressed && paintCooldownTimer <= 0) {
+      input.consumePaintBridge();
+      paintCooldownTimer = CONFIG.CONTROLS.paintBridge.cooldown;
+      level.paintInkBridge(player.aabb.x, player.aabb.y, player.facing);
+      events.emit('camera_shake', { amount: 0.14 });
+    }
+    if (input.bellPressed && bellCooldownTimer <= 0) {
+      input.consumeBell();
+      bellCooldownTimer = CONFIG.CONTROLS.bell.cooldown;
+      level.triggerBellResonance(player);
+      events.emit('camera_shake', { amount: 0.32 });
+    }
+    if (input.cameraPressed) {
+      input.consumeCamera();
+      cameraRig.cyclePerspective();
+    }
+  }
+
+  // Update power button cooldown labels
+  if (hud.powerBtns?.paint) {
+    hud.powerBtns.paint.innerText = paintCooldownTimer > 0
+      ? `Bridge (${paintCooldownTimer.toFixed(1)}s)`
+      : `Paint Bridge [${CONFIG.CONTROLS.paintBridge.display}]`;
+  }
+  if (hud.powerBtns?.bell) {
+    hud.powerBtns.bell.innerText = bellCooldownTimer > 0
+      ? `Bell (${bellCooldownTimer.toFixed(1)}s)`
+      : `Bell [${CONFIG.CONTROLS.bell.display}]`;
+  }
+
   collision.update(dt);
   player.fixedUpdate(dt);
 
@@ -214,7 +345,7 @@ function onFixedUpdate(dt) {
   rain.update(dt, player.aabb.x, player.aabb.y);
   petals.update(dt, player.aabb.x, player.aabb.y);
   crows.update(dt, player.aabb.x, player.aabb.y);
-  audioEngine.update(dt, player.aabb.x);
+  audioEngine.update(dt);
   hud.update(player);
 
   // Combat Hitbox & Parry Collision Resolution
@@ -237,8 +368,31 @@ function onFixedUpdate(dt) {
   input.postStep();
 }
 
+// Auto-quality frame-time monitor (switches to 'low' if avg frame time > 20ms over first 3s)
+let perfSampleFrames = 0;
+let perfSampleElapsed = 0;
+let perfLastMs = 0;
+let perfChecked = false;
+
 // --- Render Loop (Interpolated) ---
 function onRender(alpha) {
+  const nowMs = performance.now();
+  if (!perfChecked && !pausedByUser && !pausedByVisibility && perfLastMs > 0) {
+    const dMs = nowMs - perfLastMs;
+    if (dMs > 1 && dMs < 150) {
+      perfSampleElapsed += dMs;
+      perfSampleFrames++;
+      if (perfSampleElapsed >= 3000 && perfSampleFrames >= 20) {
+        perfChecked = true;
+        if (perfSampleElapsed / perfSampleFrames > 20.0) {
+          applyQualityPreset('low');
+          saveSystem.save({ ...saveSystem.load(), quality: 'low' });
+        }
+      }
+    }
+  }
+  perfLastMs = nowMs;
+
   player.render(alpha);
   level.render(alpha);
   cameraRig.render(player);
@@ -257,23 +411,30 @@ function onRender(alpha) {
   }
 }
 
-// Start Game Loop
+// Start Game Loop (pass onInputUpdate for unscaled buffer timing!)
 loop = new Loop({
+  onInputUpdate,
   onFixedUpdate,
   onRender,
 });
 
+pauseMenu.loop = loop;
 player.loop = loop;
 player.combat.loop = loop;
 
-const pauseMenu = new PauseMenu(loop, audioEngine);
-
 const shouldSkipIntro = window.location.search.includes('skipIntro') || window.location.search.includes('debug');
 if (!shouldSkipIntro) {
+  input.blocked = true;
   new IntroInkDrop(audioEngine, () => {
-    console.log('Intro complete.');
+    input.blocked = false;
+    hud.startRunTimer();
   });
 }
 
 loop.start();
-console.log('KURO: Complete 3-Act Campaign active.');
+
+// Dismiss loading veil cleanly
+requestAnimationFrame(() => {
+  loadingVeil.style.opacity = '0';
+  setTimeout(() => loadingVeil.remove(), 450);
+});

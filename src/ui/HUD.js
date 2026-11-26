@@ -6,6 +6,7 @@
 
 import { CONFIG } from '../config.js';
 import { events } from '../core/EventBus.js';
+import { saveSystem } from '../core/SaveSystem.js';
 
 export const SUMIRO_CHAPTERS = [
   {
@@ -123,10 +124,13 @@ export const SUMIRO_CHAPTERS = [
 ];
 
 export class HUD {
-  constructor(onSelectChapter = null) {
+  constructor(onSelectChapter = null, input = null) {
     this.onSelectChapter = onSelectChapter;
+    this.input = input;
     this.currentChapterId = 0;
-    this.speedrunStartTime = performance.now();
+    this.speedrunStartTime = null;
+    this.playElapsedSec = 0;
+    this.hintDismissed = false;
 
     this.injectSumiroSVGAndStyles();
 
@@ -219,19 +223,42 @@ export class HUD {
     this.topLeft.appendChild(this.subRow);
     this.container.appendChild(this.topLeft);
 
-    // 2. Top-Right Poetic Chapter Navigation Strip
+    // 2. Top-Right Poetic Chapter Navigation Strip (Debug/Dev mode ONLY)
+    const isDevMode = typeof window !== 'undefined' && (window.location.search.includes('debug') || window.location.search.includes('dev'));
     this.chapterNav = document.createElement('div');
     this.chapterNav.style.cssText = `
       position: absolute;
       top: 22px;
       right: 24px;
-      display: flex;
+      display: ${isDevMode ? 'flex' : 'none'};
       gap: 5px;
       pointer-events: auto;
       flex-wrap: wrap;
       justify-content: flex-end;
       max-width: 58vw;
     `;
+
+    const isTouch = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || !!window.matchMedia?.('(pointer: coarse)')?.matches);
+    const isNarrow = typeof window !== 'undefined' && window.innerWidth <= 640;
+
+    // Subtle "Click / Press any key for sound" note until AudioContext unlocks
+    this.soundUnlockNote = document.createElement('div');
+    this.soundUnlockNote.style.cssText = `
+      position: absolute;
+      top: ${isNarrow ? '64px' : '22px'};
+      ${isNarrow ? 'left: 28px;' : 'right: 24px;'}
+      background: rgba(234, 229, 217, 0.90);
+      color: #1c1914;
+      border: 1px solid rgba(28, 25, 20, 0.25);
+      padding: 4px 10px;
+      font-size: 12px;
+      font-style: italic;
+      border-radius: 3px;
+      display: ${isDevMode ? 'none' : 'block'};
+      pointer-events: none;
+    `;
+    this.soundUnlockNote.innerText = isTouch ? 'Tap anywhere for sound' : 'Click / Press any key for sound';
+    this.container.appendChild(this.soundUnlockNote);
 
     this.chapterBtns = [];
     SUMIRO_CHAPTERS.forEach((ch) => {
@@ -375,43 +402,50 @@ export class HUD {
     `;
     this.container.appendChild(this.subtitleLine);
 
-    // 6. Subtle Bottom Controls & Interactive Brush-Power Strip
+    // 6. High-Contrast Controls Hint (generated from CONFIG.CONTROLS, >=13px, fades after 60s, hidden on touch)
+    const C = CONFIG.CONTROLS;
     this.controlsHint = document.createElement('div');
     this.controlsHint.style.cssText = `
       position: absolute;
-      bottom: 16px;
+      bottom: 14px;
       left: 28px;
-      font-size: 11.5px;
-      font-style: italic;
-      color: rgba(28, 25, 20, 0.72);
-      letter-spacing: 0.06em;
-      text-shadow: 0 1px 0 rgba(232, 223, 202, 0.75);
+      font-size: 13px;
+      font-style: normal;
+      font-weight: 600;
+      color: #141413;
+      background: rgba(234, 229, 217, 0.86);
+      border: 1px solid rgba(28, 25, 20, 0.22);
+      padding: 4px 12px;
+      border-radius: 3px;
+      letter-spacing: 0.03em;
+      display: ${isTouch ? 'none' : 'block'};
+      transition: opacity 0.6s ease;
     `;
-    this.controlsHint.innerHTML = `WASD / Arrows to walk &nbsp;·&nbsp; Space×2 jump &nbsp;·&nbsp; Click / J strike &nbsp;·&nbsp; R-Click / K deflect &nbsp;·&nbsp; Shift / L ink-step`;
+    this.controlsHint.innerHTML = `${C.moveLeft.display}/${C.moveRight.display} Move · ${C.jump.display} Jump · ${C.attack.display} Attack · ${C.parry.display} Parry · ${C.dash.display} Dash · ${C.pause.display} Pause`;
     this.container.appendChild(this.controlsHint);
 
     this.powerBar = document.createElement('div');
     this.powerBar.style.cssText = `
       position: absolute;
-      bottom: 14px;
-      right: 24px;
+      ${isTouch ? 'top: 22px; right: 14px;' : 'bottom: 14px; right: 24px;'}
       display: flex;
       gap: 6px;
       pointer-events: auto;
     `;
 
-    const makePowerBtn = (label, keyCode) => {
+    this.powerBtns = {};
+    const makePowerBtn = (label, keyCode, id) => {
       const b = document.createElement('button');
       b.innerHTML = label;
       b.style.cssText = `
-        background: rgba(28, 25, 20, 0.84);
+        background: rgba(28, 25, 20, 0.88);
         color: #ede3cc;
         border: 1px solid rgba(168, 50, 31, 0.75);
-        padding: 4px 10px;
+        padding: 5px 10px;
         font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
         font-style: italic;
-        font-size: 11px;
-        letter-spacing: 0.05em;
+        font-size: 12px;
+        letter-spacing: 0.04em;
         cursor: pointer;
         border-radius: 2px;
       `;
@@ -420,18 +454,19 @@ export class HUD {
         b.blur();
       });
       this.powerBar.appendChild(b);
+      this.powerBtns[id] = b;
     };
 
-    makePowerBtn('Paint Bridge [E]', 'KeyE');
-    makePowerBtn('Bell Resonance [F]', 'KeyF');
-    makePowerBtn('Camera Angle [V]', 'KeyV');
+    makePowerBtn(`Paint Bridge [${C.paintBridge.display}]`, 'KeyE', 'paint');
+    makePowerBtn(`Bell [${C.bell.display}]`, 'KeyF', 'bell');
+    makePowerBtn(`Cam [${C.camera.display}]`, 'KeyV', 'cam');
     this.container.appendChild(this.powerBar);
 
-    // 7. Sumiro Boss Vitality Bar (Torn-Ink Brush Bar)
+    // 7. Sumiro Boss Vitality Bar (positioned cleanly above controls hint & subtitle)
     this.bossBarContainer = document.createElement('div');
     this.bossBarContainer.style.cssText = `
       position: absolute;
-      bottom: 86px;
+      bottom: 58px;
       left: 50%;
       transform: translateX(-50%);
       width: 440px;
@@ -480,9 +515,51 @@ export class HUD {
     const uiRoot = document.getElementById('ui-root') || document.body;
     uiRoot.appendChild(this.container);
 
+    this.initTouchControls();
+
     this.bannerTimeout = null;
     this.poemTimeout = null;
     this.setupListeners();
+  }
+
+  startRunTimer() {
+    if (this.speedrunStartTime === null) {
+      this.speedrunStartTime = performance.now();
+    }
+  }
+
+  setSoundUnlocked(unlocked) {
+    if (this.soundUnlockNote) {
+      this.soundUnlockNote.style.display = unlocked ? 'none' : 'block';
+    }
+  }
+
+  initTouchControls() {
+    if (typeof window === 'undefined' || !this.input) return;
+    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || !!window.matchMedia?.('(pointer: coarse)')?.matches;
+    if (!isTouch) return;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'kuro-touch-controls';
+    wrap.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:18;';
+    wrap.innerHTML = `
+      <div style="position:absolute;bottom:18px;left:14px;display:flex;gap:10px;pointer-events:auto;">
+        <button data-tk="left" style="width:52px;height:52px;border-radius:50%;background:rgba(20,20,19,0.78);color:#eae5d9;border:1px solid #a8321f;font-size:18px;">◀</button>
+        <button data-tk="right" style="width:52px;height:52px;border-radius:50%;background:rgba(20,20,19,0.78);color:#eae5d9;border:1px solid #a8321f;font-size:18px;">▶</button>
+      </div>
+      <div style="position:absolute;bottom:18px;right:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;pointer-events:auto;">
+        <button data-tk="parry" style="padding:10px 12px;border-radius:8px;background:rgba(20,20,19,0.82);color:#eae5d9;border:1px solid #a8321f;font-size:11px;font-weight:bold;">PARRY</button>
+        <button data-tk="dash" style="padding:10px 12px;border-radius:8px;background:rgba(20,20,19,0.82);color:#eae5d9;border:1px solid #a8321f;font-size:11px;font-weight:bold;">DASH</button>
+        <button data-tk="attack" style="padding:10px 12px;border-radius:8px;background:rgba(168,50,31,0.88);color:#eae5d9;border:1px solid #eae5d9;font-size:11px;font-weight:bold;">ATK</button>
+        <button data-tk="jump" style="padding:10px 12px;border-radius:8px;background:rgba(20,20,19,0.88);color:#eae5d9;border:1px solid #eae5d9;font-size:11px;font-weight:bold;">JUMP</button>
+      </div>
+    `;
+    this.container.appendChild(wrap);
+    wrap.querySelectorAll('[data-tk]').forEach(btn => {
+      const k = btn.dataset.tk;
+      btn.addEventListener('touchstart', (e) => { e.preventDefault(); this.input.touchState[k] = true; }, { passive: false });
+      btn.addEventListener('touchend', (e) => { e.preventDefault(); this.input.touchState[k] = false; }, { passive: false });
+    });
   }
 
   injectSumiroSVGAndStyles() {
@@ -572,11 +649,22 @@ export class HUD {
   update(player) {
     if (!player) return;
 
-    // 1. Update Speedrun Timer
-    const elapsedSec = (performance.now() - this.speedrunStartTime) * 0.001;
-    const mins = Math.floor(elapsedSec / 60).toString().padStart(2, '0');
-    const secs = Math.floor(elapsedSec % 60).toString().padStart(2, '0');
-    this.timerBadge.innerText = `${mins}:${secs}`;
+    // 1. Update Speedrun Timer & Auto-fade controls hint after 60s
+    if (this.speedrunStartTime !== null) {
+      const elapsedSec = (performance.now() - this.speedrunStartTime) * 0.001;
+      const mins = Math.floor(elapsedSec / 60).toString().padStart(2, '0');
+      const secs = Math.floor(elapsedSec % 60).toString().padStart(2, '0');
+      this.timerBadge.innerText = `${mins}:${secs}`;
+      if (!this.hintDismissed && elapsedSec >= 60) {
+        this.hintDismissed = true;
+        this.controlsHint.style.opacity = '0';
+      }
+    }
+
+    // Keep subtitle above boss bar when boss bar is visible
+    if (this.subtitleLine && this.bossBarContainer) {
+      this.subtitleLine.style.bottom = this.bossBarContainer.style.display === 'flex' ? '108px' : '56px';
+    }
 
     // 2. Update Horizontal Brushstroke Health Pips
     const curHp = player.health;
@@ -623,6 +711,11 @@ export class HUD {
     if (activeCh.id !== this.currentChapterId) {
       this.currentChapterId = activeCh.id;
       this.showChapterBanner(activeCh);
+      const saved = saveSystem.load();
+      if (activeCh.id > (saved.unlockedChapter || 1)) {
+        saveSystem.save({ ...saved, unlockedChapter: activeCh.id });
+      }
+      events.emit('chapter_changed', activeCh);
 
       for (const item of this.chapterBtns) {
         if (item.id === activeCh.id) {

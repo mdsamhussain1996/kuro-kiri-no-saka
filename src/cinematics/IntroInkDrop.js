@@ -87,15 +87,17 @@ export class IntroInkDrop {
 
     this.skipHint = document.createElement('div');
     this.skipHint.style.cssText = `
-      margin-top: 18px;
-      font-size: 11px;
-      letter-spacing: 1px;
-      color: #a8a59c;
+      margin-top: 22px;
+      font-size: 13px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      color: #1c1914;
       text-transform: uppercase;
       opacity: 0;
       transition: opacity 0.5s ease;
+      animation: kuro-pulse 1.8s ease-in-out infinite;
     `;
-    this.skipHint.innerText = 'Press any key to begin';
+    this.skipHint.innerText = 'Press any key or click to begin';
     this.textContainer.appendChild(this.skipHint);
 
     this.container.appendChild(this.textContainer);

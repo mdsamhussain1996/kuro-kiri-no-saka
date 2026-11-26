@@ -219,15 +219,19 @@ export const SUMIE_FRAGMENT_SHADER = /* glsl */ `
     col = mix(col, uRimHighlight, scumble * 0.42 * (1.0 - uDarkBias));
 
     if (worldNormal.y > 0.72) {
-      float topWash = smoothstep(0.72, 0.96, worldNormal.y) * 0.26 * (1.0 - uDarkBias);
+      float topWash = smoothstep(0.72, 0.96, worldNormal.y) * 0.34 * (1.0 - uDarkBias * 0.8);
       col = mix(col, uRimHighlight, topWash);
     }
 
+    // Subtle parchment rim-light on dark gameplay silhouettes (separates Kuro from dark stone)
+    float rimMask = smoothstep(0.42, 0.88, graze) * smoothstep(0.05, 0.4, uDarkBias);
+    col = mix(col, uRimHighlight, rimMask * 0.38);
+
     // 8. Delicate Pressure-Gapped Pen Contour Line (#0e0d0a)
     float brushWobble = (inkNoise3(vWorldPosition * 3.6) - 0.5) * 0.09;
-    float penLift = smoothstep(0.55, 0.92, worldNormal.y) * 0.45; // Pen lifts on sunlit upper edges
-    float inkEdge = (1.0 - smoothstep(0.10, 0.27 + brushWobble, NdotV)) * (1.0 - penLift);
-    vec3 finalColor = mix(col, vec3(0.055, 0.051, 0.039), inkEdge * uInkContourStrength * 0.82);
+    float penLift = smoothstep(0.55, 0.92, worldNormal.y) * 0.42; // Pen lifts on sunlit upper edges
+    float inkEdge = (1.0 - smoothstep(0.11, 0.29 + brushWobble, NdotV)) * (1.0 - penLift);
+    vec3 finalColor = mix(col, vec3(0.055, 0.051, 0.039), inkEdge * uInkContourStrength * 0.94);
 
     // 9. Vermilion Hanko Seal Accent (#a8321f / #b8292f)
     if (uHasRedSeal > 0.5) {

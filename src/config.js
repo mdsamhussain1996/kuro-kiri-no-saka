@@ -4,6 +4,23 @@
 // =============================================================================
 
 export const CONFIG = {
+  // --- Unified Controls Table (Single Source of Truth for Input, HUD, PauseMenu & README) ---
+  CONTROLS: {
+    moveLeft:    { label: 'Move Left',    keys: ['KeyA', 'ArrowLeft'],  display: 'A / ←' },
+    moveRight:   { label: 'Move Right',   keys: ['KeyD', 'ArrowRight'], display: 'D / →' },
+    moveUp:      { label: 'Look Up',      keys: ['KeyW', 'ArrowUp'],    display: 'W / ↑' },
+    moveDown:    { label: 'Crouch / Drop',keys: ['KeyS', 'ArrowDown'],  display: 'S / ↓' },
+    jump:        { label: 'Jump / Vault', keys: ['Space', 'KeyW', 'ArrowUp'], display: 'Space / W / ↑', buffer: 0.12 },
+    attack:      { label: 'Katana Attack',keys: ['KeyJ'],               mouse: 0, display: 'J / Left Click', buffer: 0.12 },
+    parry:       { label: 'Parry / Guard',keys: ['KeyK'],               mouse: 2, display: 'K / Right Click', buffer: 0.10 },
+    dash:        { label: 'Ink Step Dash',keys: ['KeyL', 'ShiftLeft', 'ShiftRight'], display: 'L / Shift', buffer: 0.10 },
+    paintBridge: { label: 'Paint Bridge', keys: ['KeyE'],               display: 'E', cooldown: 3.0 },
+    bell:        { label: 'Bell Resonance',keys: ['KeyF'],              display: 'F', cooldown: 5.0 },
+    camera:      { label: '3D Camera',    keys: ['KeyV'],               display: 'V' },
+    pause:       { label: 'Pause',        keys: ['Escape', 'KeyP'],     display: 'Esc / P' },
+    mute:        { label: 'Mute Audio',   keys: ['KeyM'],               display: 'M' }
+  },
+
   // --- Game Loop & Simulation ---
   TIME_STEP: 1 / 60,       // 60 Hz fixed physics simulation
   MAX_DELTA: 0.1,          // Maximum delta clamped to prevent tunneling on lag spikes

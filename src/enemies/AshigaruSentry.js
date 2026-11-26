@@ -133,7 +133,7 @@ export class AshigaruSentry {
 
     this.meshGroup.add(this.spearGroup);
 
-    // Alert "!" Indicator
+    // Alert "!" Indicator & Unaware Awareness Ring "○"
     if (typeof document !== 'undefined') {
       const alertCanvas = document.createElement('canvas');
       alertCanvas.width = 64;
@@ -147,11 +147,28 @@ export class AshigaruSentry {
       const alertTex = new THREE.CanvasTexture(alertCanvas);
       const alertMat = new THREE.SpriteMaterial({ map: alertTex, transparent: true, opacity: 0 });
       this.alertSprite = new THREE.Sprite(alertMat);
-      this.alertSprite.position.set(0, cfg.height * 0.5 + 0.8, 0);
+      this.alertSprite.position.set(0, cfg.height * 0.5 + 0.85, 0);
       this.alertSprite.scale.set(0.8, 0.8, 1);
       this.meshGroup.add(this.alertSprite);
+
+      // Unaware empty vermilion circle (signals backstab opportunity)
+      const ringCanvas = document.createElement('canvas');
+      ringCanvas.width = 64;
+      ringCanvas.height = 64;
+      const rctx = ringCanvas.getContext('2d');
+      rctx.strokeStyle = '#a8321f';
+      rctx.lineWidth = 6;
+      rctx.beginPath();
+      rctx.arc(32, 32, 16, 0, Math.PI * 2);
+      rctx.stroke();
+      const ringTex = new THREE.CanvasTexture(ringCanvas);
+      this.unawareSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: ringTex, transparent: true, opacity: 0.78 }));
+      this.unawareSprite.position.set(0, cfg.height * 0.5 + 0.72, 0);
+      this.unawareSprite.scale.set(0.55, 0.55, 1);
+      this.meshGroup.add(this.unawareSprite);
     } else {
       this.alertSprite = { material: { opacity: 0 } };
+      this.unawareSprite = { material: { opacity: 0 } };
     }
 
     this.scene.add(this.meshGroup);
@@ -173,6 +190,7 @@ export class AshigaruSentry {
     this.fsm.addState('Patrol', {
       enter: () => {
         this.alertSprite.material.opacity = 0;
+        if (this.unawareSprite) this.unawareSprite.material.opacity = 0.78;
         this.attackHitbox.deactivate();
         this.isStaggered = false;
       },
@@ -207,6 +225,7 @@ export class AshigaruSentry {
         this.velocity.x = 0;
         this.stateTimer = 0.38;
         this.alertSprite.material.opacity = 1.0;
+        if (this.unawareSprite) this.unawareSprite.material.opacity = 0;
         events.emit('enemy_alert', { enemy: this });
       },
       fixedUpdate: (dt, player) => {

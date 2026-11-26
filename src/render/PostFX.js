@@ -45,12 +45,12 @@ export class PostProcessingSystem {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, w, h);
 
-    // 1. Sumiro Vertical Sky-to-Valley Silk Wash Gradient
+    // 1. Sumiro Vertical Sky-to-Valley Silk Wash Gradient (kept bright in center to preserve 3-plane contrast)
     const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
-    bgGrad.addColorStop(0.0, '#d8ccb2');  // Upper sky warm antique silk
-    bgGrad.addColorStop(0.35, '#dfd3b9'); // Horizon golden-peach glow
-    bgGrad.addColorStop(0.70, '#cfc5ad'); // Mid valley mist wash
-    bgGrad.addColorStop(1.0, '#bdb39b');  // Lower valley floor tone
+    bgGrad.addColorStop(0.0, '#eae0ca');  // Upper sky warm antique silk
+    bgGrad.addColorStop(0.35, '#efe6d2'); // Horizon golden-peach glow
+    bgGrad.addColorStop(0.70, '#e5dcc6'); // Mid valley mist wash
+    bgGrad.addColorStop(1.0, '#d7ccb2');  // Lower valley floor tone
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 

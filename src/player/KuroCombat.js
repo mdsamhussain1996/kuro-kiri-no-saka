@@ -195,7 +195,7 @@ export class KuroCombat {
       }
 
       if (this.loop) {
-        this.loop.triggerHitStop(CONFIG.COMBAT.hitStopMsParry);
+        this.loop.triggerHitStop(120);
       }
       events.emit('camera_shake', { amount: 0.35 });
       events.emit('parry_perfect', { enemy });
@@ -205,7 +205,8 @@ export class KuroCombat {
       this.player.fsm.changeState('Idle');
 
     } else {
-      // Guard: block damage, minor knockback, 40ms hit-stop
+      // Guard: block damage, minor knockback, 40ms hit-stop, dull clink
+      events.emit('parry_late', { x: this.player.aabb.x, y: this.player.aabb.y });
       if (this.inkSplash) {
         this.inkSplash.spawnParryBurst(
           this.player.aabb.x + this.player.facing * 0.6,
