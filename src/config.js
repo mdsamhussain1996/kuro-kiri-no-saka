@@ -16,6 +16,7 @@ export const CONFIG = {
     dash:        { label: 'Ink Step Dash',keys: ['KeyL', 'ShiftLeft', 'ShiftRight'], display: 'L / Shift', buffer: 0.10 },
     paintBridge: { label: 'Paint Bridge', keys: ['KeyE'],               display: 'E', cooldown: 3.0 },
     bell:        { label: 'Bell Resonance',keys: ['KeyF'],              display: 'F', cooldown: 5.0 },
+    ippitsu:     { label: 'Ippitsu Slash', keys: ['KeyQ'],              display: 'Q' },
     camera:      { label: '3D Camera',    keys: ['KeyV'],               display: 'V' },
     pause:       { label: 'Pause',        keys: ['Escape', 'KeyP'],     display: 'Esc / P' },
     mute:        { label: 'Mute Audio',   keys: ['KeyM'],               display: 'M' }

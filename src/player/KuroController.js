@@ -47,18 +47,20 @@ export class KuroController {
     this.afterimageTimer = 0;
     this.hasInkStepUnlocked = true; // True for testing, can be locked/unlocked via shrine
     this.scrollOfFlowUnlocked = false;
+    this.assistMode = false;
     this.swingingLanternsRef = [];
     this.targetGrappleLantern = null;
+    this._renderDt = 1 / 60;
 
-    events.on('scroll_unlocked', (payload = {}) => {
-      const idx = payload.scrollId || payload.index || 0;
+    this._unsubScroll = events.on('scroll_unlocked', (payload = {}) => {
+      const idx = payload.scrollId ?? payload.index ?? 0;
       if (idx >= 1) {
         this.scrollOfFlowUnlocked = true;
         this.hasInkStepUnlocked = true;
         this.hasIppitsuUnlocked = true;
       }
     });
-    events.on('ippitsu_unlocked', () => {
+    this._unsubIppitsu = events.on('ippitsu_unlocked', () => {
       this.hasIppitsuUnlocked = true;
     });
 
@@ -110,6 +112,7 @@ export class KuroController {
 
         if (this.checkAttackTrigger()) return;
         if (this.checkParryTrigger()) return;
+        if (this.input.axisY > 0 && this.input.dashBuffered && this.checkDashTrigger()) return;
         if (this.checkJumpTrigger()) return;
         if (this.checkDashTrigger()) return;
 
@@ -134,6 +137,7 @@ export class KuroController {
       fixedUpdate: (dt) => {
         if (this.checkAttackTrigger()) return;
         if (this.checkParryTrigger()) return;
+        if (this.input.axisY > 0 && this.input.dashBuffered && this.checkDashTrigger()) return;
         if (this.checkJumpTrigger()) return;
         if (this.checkDashTrigger()) return;
 
@@ -159,6 +163,7 @@ export class KuroController {
       },
       fixedUpdate: (dt) => {
         if (this.checkAttackTrigger()) return;
+        if (this.input.axisY > 0 && this.input.dashBuffered && this.checkDashTrigger()) return;
         if (this.checkDashTrigger()) return;
         if (this.checkJumpTrigger()) return; // Mid-air Double Jump!
 
@@ -283,7 +288,12 @@ export class KuroController {
         this.velocity.y = 0;
         this.hasAirDash = true;
 
-        if (ledge && Number.isFinite(ledge.snapX) && Number.isFinite(ledge.snapY)) {
+        if (ledge?.side === 'lantern') {
+          if (Number.isFinite(ledge.x) && Number.isFinite(ledge.y)) {
+            this.aabb.x = ledge.x;
+            this.aabb.y = ledge.y - this.aabb.height * 0.4;
+          }
+        } else if (ledge && Number.isFinite(ledge.snapX) && Number.isFinite(ledge.snapY)) {
           this.aabb.x = ledge.snapX;
           this.aabb.y = ledge.snapY;
           if (ledge.cornerX !== undefined) {
@@ -301,8 +311,23 @@ export class KuroController {
         }
         events.emit('player:ledgegrab', { x: this.aabb.x, y: this.aabb.y });
       },
+      exit: () => {
+        if (this.ledgeCorner?.lantern?.grabbedPlayer === this) {
+          this.ledgeCorner.lantern.grabbedPlayer = null;
+          this.ledgeCorner.lantern.grabCooldown = 0.5;
+        }
+        this.ledgeCorner = null;
+      },
       fixedUpdate: (dt) => {
-        if (this.input.axisY > 0 || this.input.jumpBuffered) {
+        if (this.ledgeCorner?.side === 'lantern') {
+          if (this.input.axisY < 0) {
+            this.ledgeGrabCooldown = 0.3;
+            this.fsm.changeState('Fall');
+          }
+          return;
+        }
+
+        if (this.input.axisY > 0 || this.input.jumpBuffered || (this.input.axisX === this.facing && this.input.axisY >= 0)) {
           this.input.consumeJump();
           this.fsm.changeState('LedgeClimb');
           return;
@@ -399,6 +424,12 @@ export class KuroController {
       enter: () => {
         this.combat.startAttack(false);
       },
+      exit: () => {
+        if (this.combat) {
+          this.combat.attackPhase = null;
+          this.combat.attackHitbox?.deactivate();
+        }
+      },
       fixedUpdate: (dt) => {
         // Apply ground lunge friction
         this.applyGroundMovement(dt, 0);
@@ -411,7 +442,7 @@ export class KuroController {
         }
 
         // Allow parrying out of recovery
-        if (this.checkParryTrigger()) return;
+        if (this.combat.attackPhase === 'recovery' && this.checkParryTrigger()) return;
 
         // Allow dashing out of recovery
         if (this.combat.attackPhase === 'recovery' && this.checkDashTrigger()) return;
@@ -423,14 +454,24 @@ export class KuroController {
       enter: () => {
         this.combat.startAttack(true);
       },
+      exit: () => {
+        if (this.combat?.isAirAttack && this.combat.attackPhase) {
+          this.combat.attackPhase = null;
+          this.combat.attackHitbox?.deactivate();
+        }
+      },
       fixedUpdate: (dt) => {
-        // Milder gravity during air slash
+        // Allow slight air steering and gentler gravity during air slash
+        this.applyAirMovement(dt);
         const g = this.velocity.y > 0 ? CONFIG.PLAYER.gravityRising : CONFIG.PLAYER.gravityFalling;
         this.velocity.y += g * 0.35 * dt;
-        this.velocity.x *= 0.94;
+        this.velocity.x *= 0.96;
+
+        // Allow dash-cancel out of air slash recovery
+        if (this.combat.attackPhase === 'recovery' && this.checkDashTrigger()) return;
 
         if (this.coyoteTimer > 0) {
-          this.fsm.changeState('Idle');
+          this.fsm.changeState(this.input.axisX !== 0 ? 'Run' : 'Idle');
         }
       }
     });
@@ -439,6 +480,9 @@ export class KuroController {
     this.fsm.addState('Parry', {
       enter: () => {
         this.combat.startParry();
+      },
+      exit: () => {
+        this.combat?.endParry();
       },
       fixedUpdate: (dt) => {
         this.applyGroundMovement(dt, 0);
@@ -472,6 +516,19 @@ export class KuroController {
         this.velocity.x = 0;
         this.velocity.y = 0;
         this.respawnTimer = 0.9;
+        if (this.ledgeCorner?.lantern?.grabbedPlayer === this) {
+          this.ledgeCorner.lantern.grabbedPlayer = null;
+          this.ledgeCorner.lantern.grabCooldown = 0.5;
+        }
+        this.ledgeCorner = null;
+        if (this.swingingLanternsRef) {
+          for (const l of this.swingingLanternsRef) {
+            if (l.grabbedPlayer === this) {
+              l.grabbedPlayer = null;
+              l.grabCooldown = 0.5;
+            }
+          }
+        }
         // Cancel active combat hitboxes and input buffers immediately on death
         if (this.combat) {
           this.combat.attackPhase = null;
@@ -526,15 +583,24 @@ export class KuroController {
     if (this.coyoteTimer > 0) {
       this.input.consumeJump();
       this.fsm.changeState('JumpRise');
+      if (this.groundRef?.isBamboo && this.groundRef.stalk && this.groundRef.stalk.deflection !== 0) {
+        this.groundRef.stalk.applyLaunchBoost(this);
+      }
       return true;
     } else if (this.hasDoubleJump) {
       // Mid-air Double Jump with ink ring burst under Kuro's feet
       this.input.consumeJump();
       this.hasDoubleJump = false;
       if (this.ripples) {
-        this.ripples.spawn(this.aabb.x, this.aabb.y - this.aabb.halfH, 1.1);
+        this.ripples.spawn(this.aabb.x, this.aabb.minY, 0, 1.1);
       }
-      this.fsm.changeState('JumpRise');
+      if (this.fsm.isInState('JumpRise')) {
+        this.velocity.y = CONFIG.PLAYER.jumpVelocity;
+        this.isJumpingRise = true;
+        this.coyoteTimer = 0;
+      } else {
+        this.fsm.changeState('JumpRise');
+      }
       return true;
     }
     return false;
@@ -546,8 +612,8 @@ export class KuroController {
 
     let bestDist = 11.5;
     for (const l of this.swingingLanternsRef) {
-      const lx = l.bobX ?? l.pivotX;
-      const ly = l.bobY ?? (l.pivotY - l.ropeLength);
+      const lx = l.lanternPos?.x ?? l.bobX ?? l.pivotX;
+      const ly = l.lanternPos?.y ?? l.bobY ?? (l.pivotY - l.ropeLength);
       const d = Math.hypot(lx - this.aabb.x, ly - this.aabb.y);
       if (d < bestDist && d > 1.2) {
         bestDist = d;
@@ -564,7 +630,7 @@ export class KuroController {
       this.input.consumeDash();
       const target = this.targetGrappleLantern;
       if (this.afterimages) {
-        this.afterimages.spawn(this.aabb.x, this.aabb.y, this.facing);
+        this.afterimages.spawn(this.aabb.x, this.aabb.y, 0, this.facing);
       }
       this.aabb.x = target.x;
       this.aabb.y = target.y + 0.6;
@@ -667,6 +733,9 @@ export class KuroController {
     if (this.dashCooldownTimer > 0) this.dashCooldownTimer -= dt;
     if (this.ledgeGrabCooldown > 0) this.ledgeGrabCooldown -= dt;
     if (this.invincibilityTimer > 0) this.invincibilityTimer -= dt;
+    if (this.assistMode && !this.fsm.isInState('Dead')) {
+      this.addInk(12 * dt);
+    }
 
     // Track hold-Down fallback (0.15s) for one-way platform drop-through
     if (this.input.axisY < 0 && this.coyoteTimer > 0) {
@@ -735,21 +804,30 @@ export class KuroController {
     }
 
     // Check level hazard/triggers
-    const triggers = this.collision.checkTriggers(this.aabb, this);
-    for (const tr of triggers) {
-      if (tr.type === 'pit') {
-        this.takeDamage(1, 0, true);
+    if (!this.fsm.isInState('Dead')) {
+      if (this.aabb.y < -25) {
+        this.takeDamage(1, this.aabb.x, true);
+        return;
+      }
+      const triggers = this.collision.checkTriggers(this.aabb, this);
+      for (const tr of triggers) {
+        if (tr.type === 'pit') {
+          this.takeDamage(1, 0, true);
+          break;
+        }
       }
     }
   }
 
   takeDamage(amount = 1, sourceX = 0, isPit = false) {
     if (isPit) {
+      if (this.fsm.isInState('Dead')) return;
       this.health = Math.max(0, this.health - amount);
+      events.emit('player_damaged', { health: this.health });
       if (this.health <= 0) {
-        this.respawnAtCheckpoint();
+        this.fsm.changeState('Dead');
       } else {
-        this.respawnAtCheckpoint(this.lastCheckpoint);
+        this.respawnAtCheckpoint(this.lastCheckpoint, { restoreHealth: false });
       }
       return;
     }
@@ -770,12 +848,27 @@ export class KuroController {
     this.lastCheckpoint = { x, y };
   }
 
-  respawnAtCheckpoint(checkpoint = this.lastCheckpoint) {
+  respawnAtCheckpoint(checkpoint = this.lastCheckpoint, { restoreHealth = true } = {}) {
+    if (this.ledgeCorner?.lantern?.grabbedPlayer === this) {
+      this.ledgeCorner.lantern.grabbedPlayer = null;
+      this.ledgeCorner.lantern.grabCooldown = 0.5;
+    }
+    this.ledgeCorner = null;
+    if (this.swingingLanternsRef) {
+      for (const l of this.swingingLanternsRef) {
+        if (l.grabbedPlayer === this) {
+          l.grabbedPlayer = null;
+          l.grabCooldown = 0.5;
+        }
+      }
+    }
     this.aabb.x = checkpoint.x;
     this.aabb.y = checkpoint.y;
     this.velocity.x = 0;
     this.velocity.y = 0;
-    this.health = this.maxHealth;
+    if (restoreHealth) {
+      this.health = this.maxHealth;
+    }
     this.invincibilityTimer = 1.0;
     if (this.combat?.hurtbox) {
       this.combat.hurtbox.activate();
@@ -786,32 +879,51 @@ export class KuroController {
   }
 
   // --- Render Interpolation ---
-  render(alpha) {
+  render(alpha, dt = 1 / 60) {
+    this._renderDt = dt;
     this.meshGroup.position.x = this.aabb.x;
-    if (this.model?.group) {
-      if (this.invincibilityTimer > 0 && !this.fsm.isInState('Dead')) {
-        this.model.group.visible = Math.floor(this.invincibilityTimer * 24) % 2 === 0;
-      } else {
-        this.model.group.visible = !this.fsm.isInState('Dead');
+    const isHurtIFrame = this.invincibilityTimer > 0 && !this.fsm.isInState('InkStep') && !this.fsm.isInState('Dead');
+    if (this.kuroModel?.root) {
+      this.kuroModel.root.visible = !this.fsm.isInState('Dead');
+      if (this.kuroModel.sumieMats) {
+        const flashOn = isHurtIFrame && (Math.floor(this.invincibilityTimer * 22) % 2 === 0);
+        for (const m of this.kuroModel.sumieMats) {
+          if (m?.uniforms?.uHasRedSeal) {
+            m.uniforms.uHasRedSeal.value = flashOn ? 1.0 : 0.0;
+            m.uniforms.uSealPulse.value = this.invincibilityTimer * 35.0;
+          }
+        }
       }
     }
     this.meshGroup.position.y = this.aabb.y;
 
     // Smooth turn flip (0.08s) per §3 bug 5
     const targetScaleX = this.facing;
-    this.meshGroup.scale.x += (targetScaleX - this.meshGroup.scale.x) * 0.35;
+    const flipFactor = 1.0 - Math.exp(-26.0 * Math.max(0.001, dt));
+    this.meshGroup.scale.x += (targetScaleX - this.meshGroup.scale.x) * flipFactor;
 
-    // Subtle squash & stretch driven by vertical velocity
+    // Subtle squash & stretch driven by vertical velocity (+ subtle i-frame pulse)
     const vy = this.velocity.y;
     const stretchY = THREE.MathUtils.clamp(1.0 + vy * 0.015, 0.75, 1.3);
     const stretchX = 1.0 / Math.sqrt(stretchY);
-    this.kuroModel.root.scale.set(stretchX, stretchY, 1.0);
+    const iPulse = isHurtIFrame ? (1.0 + 0.03 * Math.sin(this.invincibilityTimer * 40.0)) : 1.0;
+    this.kuroModel.root.scale.set(stretchX * iPulse, stretchY * iPulse, 1.0);
 
     // Update procedural Kuro Model (running legs, 10-segment verlet cloth scarf)
-    this.kuroModel.update(1/60, this);
+    this.kuroModel.update(dt, this);
   }
 
   dispose() {
+    this._unsubScroll?.();
+    this._unsubIppitsu?.();
+    const disposedMats = new Set();
+    this.meshGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        obj.material.dispose();
+      }
+    });
     this.meshGroup.clear();
     this.scene.remove(this.meshGroup);
   }

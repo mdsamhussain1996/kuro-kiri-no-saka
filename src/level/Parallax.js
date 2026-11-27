@@ -245,7 +245,25 @@ export class ParallaxBackground {
   }
 
   dispose() {
-    this.layers.forEach(l => this.scene.remove(l.mesh));
-    this.mistClouds.forEach(c => this.scene.remove(c.mesh));
+    const disposedGeos = new Set();
+    const disposedMats = new Set();
+    const disposeTree = (obj) => {
+      obj.traverse?.((node) => {
+        if (node.geometry && !disposedGeos.has(node.geometry)) {
+          disposedGeos.add(node.geometry);
+          node.geometry.dispose();
+        }
+        if (node.material && !disposedMats.has(node.material)) {
+          disposedMats.add(node.material);
+          if (node.material.map) node.material.map.dispose();
+          node.material.dispose();
+        }
+      });
+      this.scene.remove(obj);
+    };
+    this.layers.forEach(l => disposeTree(l.mesh));
+    this.mistClouds.forEach(c => disposeTree(c.mesh));
+    this.layers = [];
+    this.mistClouds = [];
   }
 }

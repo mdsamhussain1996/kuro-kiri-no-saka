@@ -123,10 +123,16 @@ events.on('lightning_flash', () => {
 });
 
 events.on('campaign_sunrise_victory', () => {
+  input.blocked = true;
+  input.onBlur();
   scene.background = new THREE.Color(0xfff3db);
   renderer.setClearColor(new THREE.Color(0xfff3db));
   ambientLight.color.setHex(0xffe4b5);
   ambientLight.intensity = 1.05;
+});
+
+events.on('player_died', () => {
+  saveSystem.update({ deaths: (saveSystem.load().deaths || 0) + 1 });
 });
 
 let loop;
@@ -149,6 +155,7 @@ let spawnY = LEVEL1_DATA.spawn.y;
 let startDashUnlocked = false;
 
 const chapterParam = parseInt(params.get('chapter') || '0', 10);
+const hasUrlOverride = Boolean(chapterParam || params.get('act') || params.get('boss') || params.get('debug'));
 if (chapterParam >= 1 && chapterParam <= SUMIRO_CHAPTERS.length) {
   const ch = SUMIRO_CHAPTERS[chapterParam - 1];
   spawnX = ch.spawnX;
@@ -174,6 +181,11 @@ if (chapterParam >= 1 && chapterParam <= SUMIRO_CHAPTERS.length) {
   spawnX = 786.0;
   spawnY = 98.5;
   startDashUnlocked = true;
+} else if (!hasUrlOverride && savedSettings.lastCheckpointId && savedSettings.checkpoint
+  && Number.isFinite(savedSettings.checkpoint.x) && Number.isFinite(savedSettings.checkpoint.y)) {
+  spawnX = savedSettings.checkpoint.x;
+  spawnY = savedSettings.checkpoint.y;
+  startDashUnlocked = !!savedSettings.hasInkStep || (savedSettings.unlockedChapter || 1) >= 2;
 }
 
 // --- Initialize Player ---
@@ -188,28 +200,82 @@ const player = new KuroController({
   spawnX,
   spawnY,
 });
+player.assistMode = !!savedSettings.assistMode;
 player.hasInkStepUnlocked = startDashUnlocked;
+const startChapter = SUMIRO_CHAPTERS.find(ch => spawnX >= ch.minX && spawnX < ch.maxX);
+if (startChapter && startChapter.id >= 3) {
+  player.hasBellUnlocked = true;
+  player.hasPaintBridgeUnlocked = true;
+}
+if (startChapter && startChapter.id >= 5) {
+  player.scrollOfFlowUnlocked = true;
+  player.hasIppitsuUnlocked = true;
+}
 player.swingingLanternsRef = level.swingingLanterns;
 
+cameraRig.bosses = {
+  kurogane: level.boss,
+  shirayuki: level.bossShirayuki,
+  sumiOu: level.bossSumiOu,
+};
 cameraRig.snapTo(spawnX, spawnY);
 
 function jumpToChapter(ch) {
+  level.setArenaLocked(false);
+  level.shockwaves?.clear();
+  level.projectiles?.clear();
+  level.clearPaintedBridges?.();
+  level.clearMistPlatforms?.();
+
+  if (level.boss && (!level.boss.isDead || ch.id <= 4)) {
+    level.boss.resetForEncounter?.();
+  }
+  if (level.bossShirayuki && (!level.bossShirayuki.isDead || ch.id <= 6)) {
+    level.bossShirayuki.resetForEncounter?.();
+  }
+  if (level.bossSumiOu && (!level.bossSumiOu.isDead || ch.id <= 8)) {
+    level.bossSumiOu.resetForEncounter?.();
+  }
+
   player.aabb.x = ch.spawnX;
   player.aabb.y = ch.spawnY;
   player.velocity.x = 0;
   player.velocity.y = 0;
-  player.hasInkStepUnlocked = ch.dash;
+  player.invincibilityTimer = 0;
+  player.hurtTimer = 0;
+  player.dashTimer = 0;
+  player.dashCooldownTimer = 0;
+  if (player.combat) {
+    player.combat.attackPhase = null;
+    player.combat.attackHitbox?.deactivate();
+    player.combat.endParry();
+    player.combat.hurtbox?.activate();
+    player.combat.comboIndex = 0;
+    player.combat.comboWindowTimer = 0;
+  }
+  player.fsm.changeState('Idle', null, true);
+
+  player.scrollOfFlowUnlocked = ch.id >= 5;
+  player.hasInkStepUnlocked = !!ch.dash;
+  player.hasBellUnlocked = ch.id >= 3;
+  player.hasPaintBridgeUnlocked = ch.id >= 3;
+  player.hasIppitsuUnlocked = ch.id >= 5;
   player.hasAirDash = true;
   player.hasDoubleJump = true;
   player.setCheckpoint(ch.spawnX, ch.spawnY);
   player.health = player.maxHealth;
+
+  hud?.hideBossBarImmediate?.();
   cameraRig.snapTo(ch.spawnX, ch.spawnY);
 }
 
 // --- UI Subsystems ---
 const hud = new HUD(jumpToChapter, input);
 const dialogue = new DialogueCard();
-const endCard = new EndCard();
+const endCard = new EndCard(() => {
+  pausedByUser = true;
+  loop?.pause();
+});
 
 input.onFirstGesture = () => {
   audioEngine.ensureContext();
@@ -217,6 +283,10 @@ input.onFirstGesture = () => {
 };
 
 events.on('chapter_changed', (ch) => {
+  if (ch.id >= 3) {
+    player.hasBellUnlocked = true;
+    player.hasPaintBridgeUnlocked = true;
+  }
   const weather = (ch.id === 3 || ch.id === 5 || ch.id === 6) ? 'rain' : 'clear';
   const inBoss = (ch.id === 4 || ch.id === 6 || ch.id === 8);
   audioEngine.setChapterContext(ch.id, weather, inBoss);
@@ -247,6 +317,9 @@ const pauseMenu = new PauseMenu(null, audioEngine, {
   },
   onQualityChange: (q) => {
     applyQualityPreset(q);
+  },
+  onAssistChange: (assist) => {
+    player.assistMode = !!assist;
   }
 });
 
@@ -297,9 +370,13 @@ function onInputUpdate(dt) {
   }
 }
 
+let _lastPaintLabel = '';
+let _lastBellLabel = '';
+let _lastDebugHtml = '';
+
 // --- Fixed Update Loop (60 Hz) ---
 function onFixedUpdate(dt) {
-  if (!firstControlFrame) {
+  if (!firstControlFrame && !input.blocked) {
     firstControlFrame = true;
     hud.startRunTimer();
   }
@@ -311,7 +388,7 @@ function onFixedUpdate(dt) {
   if (!dialogue.isVisible) {
     if (input.paintBridgePressed && paintCooldownTimer <= 0) {
       input.consumePaintBridge();
-      const canPaint = player.hasPaintBridgeUnlocked || (hud.currentChapterId >= 5) || window.location.search.includes('debug');
+      const canPaint = player.hasPaintBridgeUnlocked || (hud.currentChapterId >= 3) || window.location.search.includes('debug');
       if (canPaint && player.spendInk(100)) {
         paintCooldownTimer = CONFIG.CONTROLS.paintBridge.cooldown;
         level.paintInkBridge(player.aabb.x, player.aabb.y, player.facing, hud.currentChapterId >= 3 && hud.currentChapterId <= 6);
@@ -327,17 +404,25 @@ function onFixedUpdate(dt) {
         events.emit('camera_shake', { amount: 0.32 });
       }
     }
-    if (input.isPressed('KeyQ') && player.hasIppitsuUnlocked && player.spendInk(300)) {
-      // Ippitsu One-Stroke Finisher: 15% slow-mo, cuts nearby staggered/marked enemies
+    if (input.ippitsuPressed && player.hasIppitsuUnlocked && player.spendInk(300)) {
+      input.consumeIppitsu();
+      // Ippitsu One-Stroke Finisher: 15% slow-mo via simulation slowMoTimer
       loop.setTimeScale(0.15);
-      setTimeout(() => loop.setTimeScale(1.0), 220);
+      if (player.combat) {
+        player.combat.slowMoTimer = 0.04;
+      }
       events.emit('camera_shake', { amount: 0.45 });
       events.emit('ippitsu_strike', { x: player.aabb.x, y: player.aabb.y });
       if (level.enemies) {
         for (const en of level.enemies) {
-          if (!en.isDead && Math.abs(en.aabb.x - player.aabb.x) < 12) {
+          if (!en.isDead && Math.abs(en.aabb.x - player.aabb.x) < 12 && Math.abs(en.aabb.y - player.aabb.y) < 5.0) {
             en.takeDamage(6, true, player.aabb.x);
           }
+        }
+      }
+      for (const b of [level.boss, level.bossShirayuki, level.bossSumiOu]) {
+        if (b && !b.isDead && Math.abs(b.aabb.x - player.aabb.x) < 12 && Math.abs(b.aabb.y - player.aabb.y) < 6.0) {
+          b.takeDamage(6, true, player.aabb.x);
         }
       }
     }
@@ -347,16 +432,24 @@ function onFixedUpdate(dt) {
     }
   }
 
-  // Update power button cooldown labels
+  // Update power button cooldown labels (cached to avoid redundant DOM writes)
   if (hud.powerBtns?.paint) {
-    hud.powerBtns.paint.innerText = paintCooldownTimer > 0
+    const nextPaint = paintCooldownTimer > 0
       ? `Bridge (${paintCooldownTimer.toFixed(1)}s)`
       : `Paint Bridge [${CONFIG.CONTROLS.paintBridge.display}]`;
+    if (nextPaint !== _lastPaintLabel) {
+      _lastPaintLabel = nextPaint;
+      hud.powerBtns.paint.innerText = nextPaint;
+    }
   }
   if (hud.powerBtns?.bell) {
-    hud.powerBtns.bell.innerText = bellCooldownTimer > 0
+    const nextBell = bellCooldownTimer > 0
       ? `Bell (${bellCooldownTimer.toFixed(1)}s)`
       : `Bell [${CONFIG.CONTROLS.bell.display}]`;
+    if (nextBell !== _lastBellLabel) {
+      _lastBellLabel = nextBell;
+      hud.powerBtns.bell.innerText = nextBell;
+    }
   }
 
   collision.update(dt);
@@ -397,9 +490,14 @@ let perfSampleElapsed = 0;
 let perfLastMs = 0;
 let perfChecked = false;
 
+let _lastRenderMs = 0;
+
 // --- Render Loop (Interpolated) ---
 function onRender(alpha) {
   const nowMs = performance.now();
+  const renderDt = _lastRenderMs > 0 ? Math.min(0.1, Math.max(0.001, (nowMs - _lastRenderMs) * 0.001)) : 1 / 60;
+  _lastRenderMs = nowMs;
+
   if (!perfChecked && !pausedByUser && !pausedByVisibility && perfLastMs > 0) {
     const dMs = nowMs - perfLastMs;
     if (dMs > 1 && dMs < 150) {
@@ -416,9 +514,10 @@ function onRender(alpha) {
   }
   perfLastMs = nowMs;
 
-  player.render(alpha);
+  cameraRig.orbitBlocked = pausedByUser || pausedByVisibility || input.blocked;
+  player.render(alpha, renderDt);
   level.render(alpha);
-  cameraRig.render(player);
+  cameraRig.render(player, alpha);
   parallax.update(camera.position.x, camera.position.y);
 
   renderer.render(scene, camera);
@@ -426,11 +525,15 @@ function onRender(alpha) {
   if (debugOverlay && window.location.search.includes('debug')) {
     debugOverlay.style.display = 'block';
     const hpIcons = '● '.repeat(player.health) + '○ '.repeat(Math.max(0, CONFIG.COMBAT.maxHealth - player.health));
-    debugOverlay.innerHTML = `
+    const nextDebugHtml = `
       <strong>KURO: Kiri-no-Saka [3-Act Campaign]</strong><br>
       HP: <span style="color:#b8292f;">${hpIcons}</span> | State: <span style="color:#ffd43b;">${player.fsm.currentStateName}</span><br>
       Pos: (${player.aabb.x.toFixed(1)}, ${player.aabb.y.toFixed(1)}) | Cam Mode: ${cameraRig.mode}
     `;
+    if (nextDebugHtml !== _lastDebugHtml) {
+      _lastDebugHtml = nextDebugHtml;
+      debugOverlay.innerHTML = nextDebugHtml;
+    }
   }
 }
 
@@ -449,8 +552,10 @@ const shouldSkipIntro = window.location.search.includes('skipIntro') || window.l
 if (!shouldSkipIntro) {
   input.blocked = true;
   new IntroInkDrop(audioEngine, () => {
-    input.blocked = false;
-    hud.startRunTimer();
+    if (!pauseMenu.isOpen && !pausedByUser) {
+      input.blocked = false;
+      hud.startRunTimer();
+    }
   });
 }
 

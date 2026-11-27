@@ -27,9 +27,11 @@ export class PostProcessingSystem {
     container.appendChild(this.overlayCanvas);
 
     this.ctx = this.overlayCanvas.getContext('2d');
+    this._flashTimeout = null;
+    this._onResize = () => this.resize();
     this.resize();
 
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('resize', this._onResize);
   }
 
   resize() {
@@ -119,21 +121,28 @@ export class PostProcessingSystem {
   }
 
   flashLightning() {
-    if (!this.ctx) return;
+    if (!this.enabled || !this.ctx) return;
     const w = this.overlayCanvas.width;
     const h = this.overlayCanvas.height;
 
+    this.overlayCanvas.style.mixBlendMode = 'screen';
     this.ctx.save();
-    this.ctx.fillStyle = 'rgba(255, 250, 240, 0.85)';
+    this.ctx.clearRect(0, 0, w, h);
+    this.ctx.fillStyle = 'rgba(255, 250, 240, 0.72)';
     this.ctx.fillRect(0, 0, w, h);
     this.ctx.restore();
 
-    setTimeout(() => {
+    if (this._flashTimeout) clearTimeout(this._flashTimeout);
+    this._flashTimeout = setTimeout(() => {
+      this.overlayCanvas.style.mixBlendMode = 'multiply';
       this.renderOverlay(w, h);
+      this._flashTimeout = null;
     }, 70);
   }
 
   dispose() {
+    if (this._flashTimeout) clearTimeout(this._flashTimeout);
+    window.removeEventListener('resize', this._onResize);
     if (this.overlayCanvas && this.overlayCanvas.parentNode) {
       this.overlayCanvas.parentNode.removeChild(this.overlayCanvas);
     }

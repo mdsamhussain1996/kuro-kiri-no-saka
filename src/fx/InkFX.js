@@ -11,8 +11,8 @@ export class InkSplashManager {
     this.scene = scene;
 
     // 1. Pooled Ink Droplets
-    const dropletGeo = new THREE.CircleGeometry(0.12, 8);
-    const inkMat = new THREE.MeshBasicMaterial({
+    this._dropletGeo = new THREE.CircleGeometry(0.12, 8);
+    this._inkMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
       transparent: true,
       opacity: 0.9,
@@ -22,7 +22,7 @@ export class InkSplashManager {
 
     this.dropletPool = new Pool(
       () => {
-        const mesh = new THREE.Mesh(dropletGeo, inkMat.clone());
+        const mesh = new THREE.Mesh(this._dropletGeo, this._inkMat.clone());
         mesh.visible = false;
         this.scene.add(mesh);
         return {
@@ -56,8 +56,8 @@ export class InkSplashManager {
     );
 
     // 2. Tapered Calligraphy Ribbon Geometry for Katana Slashes
-    const arcGeo = this.createTaperedCalligraphyRibbonGeo(1.35, 0.42, 24);
-    const slashMat = new THREE.MeshBasicMaterial({
+    this._arcGeo = this.createTaperedCalligraphyRibbonGeo(1.35, 0.42, 24);
+    this._slashMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
       transparent: true,
       opacity: 0.92,
@@ -67,7 +67,7 @@ export class InkSplashManager {
 
     this.slashPool = new Pool(
       () => {
-        const mesh = new THREE.Mesh(arcGeo, slashMat.clone());
+        const mesh = new THREE.Mesh(this._arcGeo, this._slashMat.clone());
         mesh.visible = false;
         this.scene.add(mesh);
         return {
@@ -75,25 +75,27 @@ export class InkSplashManager {
           life: 0,
           maxLife: 0.16,
           initialScale: 1.0,
+          facing: 1,
         };
       },
-      (item, x, y, z, rotationZ, scale = 1.0, isVermilion = false) => {
+      (item, x, y, z, rotationZ, scale = 1.0, isVermilion = false, facing = 1) => {
         item.mesh.position.set(x, y, z + 0.08);
-        item.mesh.rotation.z = rotationZ;
-        item.mesh.scale.set(scale, scale, 1.0);
+        item.mesh.rotation.z = rotationZ * facing;
+        item.mesh.scale.set(scale * facing, scale, 1.0);
         item.mesh.material.color.set(isVermilion ? CONFIG.PALETTE.vermilion : CONFIG.PALETTE.inkDark);
         item.mesh.material.opacity = 0.94;
         item.mesh.visible = true;
         item.life = 0;
         item.maxLife = 0.16;
         item.initialScale = scale;
+        item.facing = facing;
       },
       16
     );
 
     // 3. Pooled Parry Flash Rings
-    const ringGeo = new THREE.RingGeometry(0.1, 0.35, 28);
-    const ringMat = new THREE.MeshBasicMaterial({
+    this._ringGeo = new THREE.RingGeometry(0.1, 0.35, 28);
+    this._ringMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.vermilion),
       transparent: true,
       opacity: 0.95,
@@ -103,7 +105,7 @@ export class InkSplashManager {
 
     this.ringPool = new Pool(
       () => {
-        const mesh = new THREE.Mesh(ringGeo, ringMat.clone());
+        const mesh = new THREE.Mesh(this._ringGeo, this._ringMat.clone());
         mesh.visible = false;
         this.scene.add(mesh);
         return {
@@ -127,10 +129,11 @@ export class InkSplashManager {
       12
     );
 
-    // 4. Pooled Ground Ink-Splatter Decals
-    const decalGeo = new THREE.CircleGeometry(0.75, 14);
-    decalGeo.scale(1.8, 0.32, 1.0);
-    const decalMat = new THREE.MeshBasicMaterial({
+    // 4. Pooled Ground Ink-Splatter Decals (flat on XZ ground plane)
+    this._decalGeo = new THREE.CircleGeometry(0.75, 14);
+    this._decalGeo.scale(1.8, 0.72, 1.0);
+    this._decalGeo.rotateX(-Math.PI / 2);
+    this._decalMat = new THREE.MeshBasicMaterial({
       color: 0x141413,
       transparent: true,
       opacity: 0.78,
@@ -140,14 +143,14 @@ export class InkSplashManager {
 
     this.decalPool = new Pool(
       () => {
-        const mesh = new THREE.Mesh(decalGeo, decalMat.clone());
+        const mesh = new THREE.Mesh(this._decalGeo, this._decalMat.clone());
         mesh.visible = false;
         this.scene.add(mesh);
         return { mesh, life: 0, maxLife: 6.5 };
       },
       (item, x, y, scale = 1.0, isVermilion = false) => {
-        item.mesh.position.set(x, y, 0.55);
-        item.mesh.scale.set(scale, scale, 1.0);
+        item.mesh.position.set(x, y + 0.03, 0.25);
+        item.mesh.scale.set(scale, 1.0, scale);
         item.mesh.material.color.set(isVermilion ? CONFIG.PALETTE.vermilion : 0x141413);
         item.mesh.material.opacity = 0.78;
         item.mesh.visible = true;
@@ -202,22 +205,39 @@ export class InkSplashManager {
 
   // Spawn tapered calligraphy sword slash ribbon
   spawnSlashArc(x, y, facing = 1, comboIndex = 0, isAir = false) {
-    let rot = facing > 0 ? -0.35 : Math.PI - 0.35;
+    let rot = -0.35;
     let scale = 1.0;
     if (comboIndex === 1) {
-      rot = facing > 0 ? 0.42 : Math.PI + 0.42;
+      rot = 0.42;
       scale = 1.18;
     } else if (comboIndex === 2) {
-      rot = facing > 0 ? -0.15 : Math.PI - 0.15;
+      rot = -0.15;
       scale = 1.48;
       // Finisher adds a secondary vermilion inner brush ribbon
-      this.slashPool.obtain(x + facing * 0.48, y, 0.08, rot, scale * 0.88, true);
+      this.slashPool.obtain(x + facing * 0.48, y, 0.08, rot, scale * 0.88, true, facing);
     }
     if (isAir) {
-      rot = facing > 0 ? -0.82 : Math.PI - 0.82;
+      rot = -0.82;
       scale = 1.25;
     }
-    this.slashPool.obtain(x + facing * 0.45, y, 0.05, rot, scale, false);
+    this.slashPool.obtain(x + facing * 0.45, y, 0.05, rot, scale, false, facing);
+  }
+
+  /**
+   * Spawn crisp metallic sparks and deflect ring when an attack clinks off boss armor.
+   */
+  spawnClinkSpark(x, y, facing = 1) {
+    this.ringPool.obtain(x, y, 0.12, 0.18, 1.35, CONFIG.PALETTE.goldAccent);
+    for (let i = 0; i < 9; i++) {
+      const angle = (facing > 0 ? Math.PI : 0) + (Math.random() - 0.5) * 1.4;
+      const speed = 10.0 + Math.random() * 7.0;
+      const vx = Math.cos(angle) * speed;
+      const vy = Math.sin(angle) * speed + 2.5;
+      const item = this.dropletPool.obtain(x, y, 0.06, vx, vy, 0, 0.16 + Math.random() * 0.1, 0.65, false);
+      if (item) {
+        item.mesh.material.color.set(i % 2 === 0 ? CONFIG.PALETTE.goldAccent : CONFIG.PALETTE.rimHighlight);
+      }
+    }
   }
 
   spawnGroundDecal(x, y, scale = 1.0, isVermilion = false) {
@@ -328,7 +348,7 @@ export class InkSplashManager {
       const progress = item.life / item.maxLife;
       item.mesh.material.opacity = (1.0 - progress) * 0.92;
       const currentScale = item.initialScale * (1.0 + progress * 0.28);
-      item.mesh.scale.set(currentScale, currentScale, 1.0);
+      item.mesh.scale.set(currentScale * (item.facing || 1), currentScale, 1.0);
       return true;
     });
 
@@ -355,6 +375,25 @@ export class InkSplashManager {
       item.mesh.material.opacity = (1.0 - progress * progress) * 0.78;
       return true;
     });
+  }
+
+  dispose() {
+    for (const pool of [this.dropletPool, this.slashPool, this.ringPool, this.decalPool]) {
+      pool.releaseAll();
+      for (const item of pool.freeList) {
+        this.scene.remove(item.mesh);
+        item.mesh.material.dispose();
+      }
+      pool.freeList.length = 0;
+    }
+    this._dropletGeo.dispose();
+    this._inkMat.dispose();
+    this._arcGeo.dispose();
+    this._slashMat.dispose();
+    this._ringGeo.dispose();
+    this._ringMat.dispose();
+    this._decalGeo.dispose();
+    this._decalMat.dispose();
   }
 }
 

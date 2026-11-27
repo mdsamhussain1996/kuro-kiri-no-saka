@@ -69,6 +69,12 @@ export class SaveSystem {
     }
   }
 
+  static update(patch = {}) {
+    const next = { ...this.load(), ...patch };
+    this.save(next);
+    return next;
+  }
+
   static saveCheckpoint(id, pos) {
     const data = this.load();
     data.checkpoint = pos;

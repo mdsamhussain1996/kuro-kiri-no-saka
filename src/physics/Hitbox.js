@@ -93,6 +93,7 @@ export class CombatManager {
       if (!atk.active) continue;
 
       // Check if Player is currently parrying
+      let parried = false;
       const player = this.playerHurtboxes[0]?.owner;
       if (player && player.isParrying) {
         // Player parry active
@@ -100,13 +101,15 @@ export class CombatManager {
           if (atk.aabb.overlaps(hurt.aabb)) {
             if (onParrySuccess) {
               const perfect = player.isPerfectParryWindow();
-              onParrySuccess(atk, player, perfect);
               atk.active = false;
-              return;
+              onParrySuccess(atk, player, perfect);
+              parried = true;
+              break;
             }
           }
         }
       }
+      if (parried) continue;
 
       // Check normal player hit
       for (const hurt of this.playerHurtboxes) {

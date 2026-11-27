@@ -131,6 +131,11 @@ export class HUD {
     this.speedrunStartTime = null;
     this.playElapsedSec = 0;
     this.hintDismissed = false;
+    this._unsubs = [];
+    this.suppressUnlockSave = typeof window !== 'undefined' && /[?&](chapter|boss|act|debug)=/.test(window.location.search);
+    this._lastTimerText = '';
+    this._lastDashMeterText = '';
+    this._lastBrushstrokeText = '';
 
     this.injectSumiroSVGAndStyles();
 
@@ -153,16 +158,20 @@ export class HUD {
     this.topLeft = document.createElement('div');
     this.topLeft.style.cssText = `
       position: absolute;
-      top: 24px;
-      left: 28px;
+      top: 20px;
+      left: 24px;
       display: flex;
       flex-direction: column;
-      gap: 9px;
-      filter: url(#ink-edge);
+      gap: 8px;
+      padding: 10px 14px;
+      background: rgba(235, 226, 205, 0.78);
+      border: 1px solid rgba(28, 25, 20, 0.16);
+      border-radius: 6px;
+      box-shadow: 0 2px 10px rgba(20, 20, 19, 0.08);
     `;
 
     this.hpRow = document.createElement('div');
-    this.hpRow.style.cssText = 'display: flex; gap: 6px; align-items: center;';
+    this.hpRow.style.cssText = 'display: flex; gap: 6px; align-items: center; filter: url(#ink-edge);';
 
     this.inkDrops = [];
     for (let i = 0; i < CONFIG.COMBAT.maxHealth; i++) {
@@ -200,7 +209,7 @@ export class HUD {
 
     // SVG Circular Stamina / Ink-Step Ring
     this.staminaWrap = document.createElement('div');
-    this.staminaWrap.style.cssText = 'width: 24px; height: 24px; position: relative;';
+    this.staminaWrap.style.cssText = 'width: 24px; height: 24px; position: relative; filter: url(#ink-edge);';
     this.staminaWrap.innerHTML = `
       <svg viewBox="0 0 36 36" style="width: 24px; height: 24px; transform: rotate(-90deg);">
         <circle cx="18" cy="18" r="13.5" fill="none" stroke="rgba(28,25,20,0.18)" stroke-width="3.2"/>
@@ -245,7 +254,7 @@ export class HUD {
     this.inkRow.appendChild(this.brushstrokeBadge);
     this.topLeft.appendChild(this.inkRow);
     this.updateBrushstrokeBadge();
-    events.on('brushstroke_collected', () => this.updateBrushstrokeBadge());
+    this._unsubs.push(events.on('brushstroke_collected', () => this.updateBrushstrokeBadge()));
 
     this.container.appendChild(this.topLeft);
 
@@ -490,6 +499,7 @@ export class HUD {
       `;
       b.addEventListener('click', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { code: keyCode }));
+        window.dispatchEvent(new KeyboardEvent('keyup', { code: keyCode }));
         b.blur();
       });
       this.powerBar.appendChild(b);
@@ -515,8 +525,7 @@ export class HUD {
       bottom: 52px;
       left: 50%;
       transform: translateX(-50%);
-      width: 420px;
-      max-width: 86vw;
+      width: min(500px, 88vw);
       display: none;
       flex-direction: column;
       align-items: center;
@@ -526,10 +535,12 @@ export class HUD {
 
     this.bossTitle = document.createElement('div');
     this.bossTitle.style.cssText = `
-      font-size: 15px;
+      font-size: clamp(11px, 1.35vw, 15px);
       font-style: italic;
-      letter-spacing: 0.22em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
+      white-space: nowrap;
+      text-align: center;
       color: #1c1914;
       text-shadow: 0 1px 0 rgba(235, 226, 205, 0.85);
     `;
@@ -545,18 +556,44 @@ export class HUD {
       overflow: hidden;
       position: relative;
       box-shadow: 0 1px 0 rgba(235, 226, 205, 0.45);
+      transition: transform 0.08s ease, box-shadow 0.14s ease;
     `;
+
+    this.bossGhostFill = document.createElement('div');
+    this.bossGhostFill.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #dfd7c2;
+      transition: width 0.55s ease-out 0.14s;
+    `;
+    this.barFrame.appendChild(this.bossGhostFill);
 
     this.bossFill = document.createElement('div');
     this.bossFill.style.cssText = `
+      position: relative;
+      z-index: 1;
       width: 100%;
       height: 100%;
       background: linear-gradient(90deg, #a8321f 0%, #6d1f14 75%, #1c1914 100%);
-      transition: width 0.2s ease-out;
+      transition: width 0.12s ease-out;
     `;
     this.barFrame.appendChild(this.bossFill);
     this.bossBarContainer.appendChild(this.barFrame);
     this.container.appendChild(this.bossBarContainer);
+
+    // 8. Screen-edge Combat Flash Vignette (Damage & Perfect Parry Feedback)
+    this.combatFlash = document.createElement('div');
+    this.combatFlash.style.cssText = `
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.22s ease-out;
+    `;
+    this.container.appendChild(this.combatFlash);
 
     const uiRoot = document.getElementById('ui-root') || document.body;
     uiRoot.appendChild(this.container);
@@ -653,18 +690,67 @@ export class HUD {
   }
 
   setupListeners() {
-    events.on('boss_intro_start', ({ name }) => {
+    this._flashTimeout = null;
+    this._bossBarPulseTimeout = null;
+    this.bossBarHideTimeout = null;
+
+    const triggerCombatFlash = (boxShadow, duration = 220) => {
+      if (!this.combatFlash) return;
+      this.combatFlash.style.boxShadow = boxShadow;
+      this.combatFlash.style.opacity = '1';
+      if (this._flashTimeout) clearTimeout(this._flashTimeout);
+      this._flashTimeout = setTimeout(() => {
+        if (this.combatFlash) this.combatFlash.style.opacity = '0';
+      }, duration);
+    };
+
+    this._unsubs.push(events.on('boss_intro_start', ({ name }) => {
+      if (this.bossBarHideTimeout) {
+        clearTimeout(this.bossBarHideTimeout);
+        this.bossBarHideTimeout = null;
+      }
       this.bossBarContainer.style.display = 'flex';
       this.bossTitle.innerText = name;
       this.bossFill.style.width = '100%';
-    });
+      if (this.bossGhostFill) this.bossGhostFill.style.width = '100%';
+    }));
 
-    events.on('boss_damaged', ({ hp, maxHp }) => {
+    this._unsubs.push(events.on('boss_damaged', ({ hp, maxHp }) => {
       const pct = Math.max(0, (hp / maxHp) * 100);
       this.bossFill.style.width = `${pct}%`;
-    });
+      if (this.bossGhostFill) this.bossGhostFill.style.width = `${pct}%`;
+      if (this.barFrame) {
+        this.barFrame.style.boxShadow = '0 0 10px rgba(168, 50, 31, 0.75)';
+        if (this._bossBarPulseTimeout) clearTimeout(this._bossBarPulseTimeout);
+        this._bossBarPulseTimeout = setTimeout(() => {
+          if (this.barFrame) this.barFrame.style.boxShadow = '0 1px 0 rgba(235, 226, 205, 0.45)';
+        }, 140);
+      }
+    }));
 
-    events.on('scroll_unlocked', ({ title, desc }) => {
+    this._unsubs.push(events.on('boss_clink', () => {
+      if (this.barFrame && this.bossBarContainer?.style.display === 'flex') {
+        this.barFrame.style.transform = 'translateX(3px)';
+        this.barFrame.style.boxShadow = '0 0 8px rgba(150, 150, 142, 0.85)';
+        if (this._bossBarPulseTimeout) clearTimeout(this._bossBarPulseTimeout);
+        this._bossBarPulseTimeout = setTimeout(() => {
+          if (this.barFrame) {
+            this.barFrame.style.transform = 'translateX(0)';
+            this.barFrame.style.boxShadow = '0 1px 0 rgba(235, 226, 205, 0.45)';
+          }
+        }, 95);
+      }
+    }));
+
+    this._unsubs.push(events.on('player_damaged', () => {
+      triggerCombatFlash('inset 0 0 65px 12px rgba(168, 50, 31, 0.55)', 240);
+    }));
+
+    this._unsubs.push(events.on('parry_perfect', () => {
+      triggerCombatFlash('inset 0 0 48px 8px rgba(255, 212, 59, 0.40)', 160);
+    }));
+
+    this._unsubs.push(events.on('scroll_unlocked', ({ title, desc }) => {
       this.chapterKicker.innerText = 'Scroll Restored';
       this.chapterTitleText.innerText = title;
       this.chapterSeal.innerText = '印';
@@ -673,23 +759,45 @@ export class HUD {
       this.subtitleLine.style.opacity = '1';
 
       if (this.bannerTimeout) clearTimeout(this.bannerTimeout);
+      if (this.poemTimeout) clearTimeout(this.poemTimeout);
       this.bannerTimeout = setTimeout(() => {
         this.chapterBanner.style.opacity = '0';
         this.subtitleLine.style.opacity = '0';
       }, 4200);
-    });
+    }));
 
-    events.on('act2_boss_defeated', () => {
-      setTimeout(() => {
+    this._unsubs.push(events.on('act2_boss_defeated', () => {
+      if (this.bossBarHideTimeout) clearTimeout(this.bossBarHideTimeout);
+      this.bossBarHideTimeout = setTimeout(() => {
         this.bossBarContainer.style.display = 'none';
+        this.bossBarHideTimeout = null;
       }, 1500);
-    });
+    }));
 
-    events.on('boss_defeated', () => {
-      setTimeout(() => {
+    this._unsubs.push(events.on('boss_defeated', () => {
+      if (this.bossBarHideTimeout) clearTimeout(this.bossBarHideTimeout);
+      this.bossBarHideTimeout = setTimeout(() => {
         this.bossBarContainer.style.display = 'none';
+        this.bossBarHideTimeout = null;
       }, 2000);
-    });
+    }));
+
+    this._unsubs.push(events.on('player:respawn', (pos) => {
+      const px = pos?.x;
+      if (typeof px === 'number' && (px < 244 || (px > 292 && px < 502) || (px > 558 && px < 774))) {
+        this.hideBossBarImmediate();
+      }
+    }));
+  }
+
+  hideBossBarImmediate() {
+    if (this.bossBarHideTimeout) {
+      clearTimeout(this.bossBarHideTimeout);
+      this.bossBarHideTimeout = null;
+    }
+    if (this.bossBarContainer) {
+      this.bossBarContainer.style.display = 'none';
+    }
   }
 
   update(player) {
@@ -700,7 +808,11 @@ export class HUD {
       const elapsedSec = (performance.now() - this.speedrunStartTime) * 0.001;
       const mins = Math.floor(elapsedSec / 60).toString().padStart(2, '0');
       const secs = Math.floor(elapsedSec % 60).toString().padStart(2, '0');
-      this.timerBadge.innerText = `${mins}:${secs}`;
+      const nextTimer = `${mins}:${secs}`;
+      if (nextTimer !== this._lastTimerText) {
+        this._lastTimerText = nextTimer;
+        this.timerBadge.innerText = nextTimer;
+      }
       if (!this.hintDismissed && elapsedSec >= 60) {
         this.hintDismissed = true;
         this.controlsHint.style.opacity = '0';
@@ -712,13 +824,17 @@ export class HUD {
       this.subtitleLine.style.bottom = this.bossBarContainer.style.display === 'flex' ? '108px' : '56px';
     }
 
-    // 2. Update Horizontal Brushstroke Health Pips
+    // 2. Update Horizontal Brushstroke Health Pips (vermilion warning pulse at 1 HP)
     const curHp = player.health;
+    const isCritical = curHp === 1;
+    const pulse = isCritical ? (0.65 + 0.35 * Math.sin(performance.now() * 0.012)) : 1.0;
     for (let i = 0; i < this.inkDrops.length; i++) {
       const pip = this.inkDrops[i];
       if (i < curHp) {
-        pip.style.opacity = '1.0';
-        pip.style.background = 'linear-gradient(90deg, #15120e 0%, #1c1914 78%, rgba(28,25,20,0.55) 100%)';
+        pip.style.opacity = `${pulse}`;
+        pip.style.background = isCritical
+          ? 'linear-gradient(90deg, #a8321f 0%, #6d1f14 85%, rgba(168,50,31,0.65) 100%)'
+          : 'linear-gradient(90deg, #15120e 0%, #1c1914 78%, rgba(28,25,20,0.55) 100%)';
       } else {
         pip.style.opacity = '0.22';
         pip.style.background = 'rgba(28, 25, 20, 0.35)';
@@ -737,18 +853,14 @@ export class HUD {
       stamArc.style.stroke = ratio < 1.0 ? '#a8321f' : '#1c1914';
     }
 
-    // 3b. Update 3-Segment Sumi Ink Meter
+    // 3b. Update 3-Segment Sumi Ink Meter & Power Button Unlock/Ink States
+    const inkVal = player.ink || 0;
     if (this.inkSegments) {
-      const inkVal = player.ink || 0;
       for (let i = 0; i < 3; i++) {
         const segPct = Math.max(0, Math.min(100, inkVal - i * 100));
         this.inkSegments[i].style.width = `${segPct}%`;
         this.inkSegments[i].style.background = inkVal >= 300 ? '#a8321f' : '#141413';
       }
-    }
-    if (this.powerBtns?.ippitsu) {
-      this.powerBtns.ippitsu.style.display = player.hasIppitsuUnlocked ? 'inline-block' : 'none';
-      this.powerBtns.ippitsu.style.opacity = (player.ink || 0) >= 300 ? '1' : '0.45';
     }
 
     // 4. Contextual Lantern Grapple Prompt
@@ -772,9 +884,11 @@ export class HUD {
       this.currentChapterId = activeCh.id;
       this.updateBrushstrokeBadge();
       this.showChapterBanner(activeCh);
-      const saved = saveSystem.load();
-      if (activeCh.id > (saved.unlockedChapter || 1)) {
-        saveSystem.save({ ...saved, unlockedChapter: activeCh.id });
+      if (!this.suppressUnlockSave) {
+        const saved = saveSystem.load();
+        if (activeCh.id > (saved.unlockedChapter || 1)) {
+          saveSystem.save({ ...saved, unlockedChapter: activeCh.id });
+        }
       }
       events.emit('chapter_changed', activeCh);
 
@@ -791,7 +905,27 @@ export class HUD {
       }
     }
 
-    this.dashMeter.innerText = `${activeCh.word} — ${activeCh.title}`;
+    const isDebugMode = typeof window !== 'undefined' && window.location.search.includes('debug');
+    const canPaint = player.hasPaintBridgeUnlocked || activeCh.id >= 3 || isDebugMode;
+    const canBell = player.hasBellUnlocked || activeCh.id >= 3 || isDebugMode;
+    if (this.powerBtns?.paint) {
+      this.powerBtns.paint.style.display = canPaint ? 'inline-block' : 'none';
+      this.powerBtns.paint.style.opacity = inkVal >= 100 ? '1' : '0.45';
+    }
+    if (this.powerBtns?.bell) {
+      this.powerBtns.bell.style.display = canBell ? 'inline-block' : 'none';
+      this.powerBtns.bell.style.opacity = inkVal >= 100 ? '1' : '0.45';
+    }
+    if (this.powerBtns?.ippitsu) {
+      this.powerBtns.ippitsu.style.display = player.hasIppitsuUnlocked ? 'inline-block' : 'none';
+      this.powerBtns.ippitsu.style.opacity = inkVal >= 300 ? '1' : '0.45';
+    }
+
+    const nextMeter = `${activeCh.word} — ${activeCh.title}`;
+    if (nextMeter !== this._lastDashMeterText) {
+      this._lastDashMeterText = nextMeter;
+      this.dashMeter.innerText = nextMeter;
+    }
   }
 
   updateBrushstrokeBadge() {
@@ -800,10 +934,23 @@ export class HUD {
     const list = Array.isArray(saved.brushstrokes) ? saved.brushstrokes : [];
     const chId = this.currentChapterId || 1;
     const count = list.filter(id => typeof id === 'string' && id.startsWith(`bs_${chId}_`)).length;
-    this.brushstrokeBadge.innerText = `Brushstrokes ${count}/3`;
+    const nextText = `Brushstrokes ${count}/3`;
+    if (nextText !== this._lastBrushstrokeText) {
+      this._lastBrushstrokeText = nextText;
+      this.brushstrokeBadge.innerText = nextText;
+    }
   }
 
   dispose() {
+    for (const unsub of this._unsubs) {
+      unsub?.();
+    }
+    this._unsubs = [];
+    if (this.bannerTimeout) clearTimeout(this.bannerTimeout);
+    if (this.poemTimeout) clearTimeout(this.poemTimeout);
+    if (this._flashTimeout) clearTimeout(this._flashTimeout);
+    if (this._bossBarPulseTimeout) clearTimeout(this._bossBarPulseTimeout);
+    if (this.bossBarHideTimeout) clearTimeout(this.bossBarHideTimeout);
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }

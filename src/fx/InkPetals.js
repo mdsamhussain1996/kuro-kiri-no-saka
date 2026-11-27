@@ -8,9 +8,9 @@ export class InkPetalSystem {
     this.scene = scene;
     this.petalCount = 65;
 
-    const geo = new THREE.CircleGeometry(0.055, 5);
-    geo.scale(0.55, 1.45, 1.0);
-    const mat = new THREE.MeshBasicMaterial({
+    this.sharedGeo = new THREE.CircleGeometry(0.055, 5);
+    this.sharedGeo.scale(0.55, 1.45, 1.0);
+    this.sharedMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
       side: THREE.DoubleSide,
       transparent: true,
@@ -22,7 +22,7 @@ export class InkPetalSystem {
     this.petals = [];
 
     for (let i = 0; i < this.petalCount; i++) {
-      const mesh = new THREE.Mesh(geo, mat.clone());
+      const mesh = new THREE.Mesh(this.sharedGeo, this.sharedMat);
       const p = {
         mesh,
         x: (Math.random() - 0.5) * 50,
@@ -70,5 +70,8 @@ export class InkPetalSystem {
   dispose() {
     this.group.clear();
     this.scene.remove(this.group);
+    this.sharedGeo?.dispose();
+    this.sharedMat?.dispose();
+    this.petals = [];
   }
 }

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { AABB } from '../physics/Collision.js';
 import { Hitbox, combatManager } from '../physics/Hitbox.js';
+import { events } from '../core/EventBus.js';
 import { createSumieMaterial, addInkOutline } from '../shaders/SumieShader.js';
 
 export class ShadowArcher {
@@ -26,6 +27,7 @@ export class ShadowArcher {
 
     this.cooldownTimer = 1.6;
     this.aimTimer = 0;
+    this.staggerTimer = 0;
     this.isAiming = false;
 
     // Hurtbox registration so Kuro's katana or reflected arrows can kill him
@@ -97,43 +99,85 @@ export class ShadowArcher {
     this.scene.add(this.meshGroup);
   }
 
-  takeDamage(amount = 1, sourceX = 0) {
-    if (this.isDead) return;
+  takeDamage(amount = 1, isInstantKill = false, attackerX = 0) {
+    if (this.isDead) return false;
     this.hp -= amount;
     if (this.inkSplash) {
       this.inkSplash.spawnHitImpact(this.aabb.x, this.aabb.y, this.facing, 12, true, true);
     }
-    if (this.hp <= 0) {
+    if (this.hp <= 0 || isInstantKill === true) {
       this.die();
     }
+    return true;
+  }
+
+  stagger(duration = 2.0) {
+    this.isStaggered = true;
+    this.staggerTimer = duration;
+    this.isAiming = false;
+    this.cooldownTimer = Math.max(this.cooldownTimer, duration);
+    this.stringMat.color.setHex(0x3d3b37);
   }
 
   onParried() {
-    this.isAiming = false;
-    this.cooldownTimer = 2.0;
-    this.stringMat.color.setHex(0x3d3b37);
+    this.stagger(2.0);
   }
 
   die() {
     this.isDead = true;
     this.hurtbox.deactivate();
+    combatManager.unregisterEntity(this);
     this.meshGroup.visible = false;
     if (this.inkSplash) {
       this.inkSplash.spawnDeathDissolve(this.aabb.x, this.aabb.y, this.width, this.height);
     }
+    events.emit('enemy_killed', { enemy: this });
+  }
+
+  hasLineOfSight(player) {
+    const solids = this.collision?.solids;
+    if (!solids || !solids.length) return true;
+    const x1 = this.aabb.x + this.facing * 0.65;
+    const y1 = this.aabb.y + 0.15;
+    const x2 = player.aabb.x;
+    const y2 = player.aabb.y;
+    const steps = 10;
+    for (let s = 1; s < steps; s++) {
+      const t = s / steps;
+      const px = x1 + (x2 - x1) * t;
+      const py = y1 + (y2 - y1) * t;
+      for (let i = 0; i < solids.length; i++) {
+        const solid = solids[i];
+        if (solid.crumbleState === 'collapsed') continue;
+        if (solid.aabb?.contains(px, py)) return false;
+      }
+    }
+    return true;
   }
 
   fixedUpdate(dt, player) {
-    if (this.isDead || !player) return;
+    if (this.isDead || !player || player.health <= 0 || player.fsm?.isInState?.('Dead')) {
+      this.isAiming = false;
+      this.stringMat.color.setHex(0x3d3b37);
+      return;
+    }
 
     this.hurtbox.updatePosition(this.aabb.x, this.aabb.y, this.facing);
+
+    if (this.staggerTimer > 0) {
+      this.staggerTimer -= dt;
+      if (this.staggerTimer <= 0) {
+        this.isStaggered = false;
+      }
+      return;
+    }
 
     const dx = player.aabb.x - this.aabb.x;
     const dy = player.aabb.y - this.aabb.y;
     const dist = Math.hypot(dx, dy);
     this.facing = dx >= 0 ? 1 : -1;
 
-    if (dist < 18.0) {
+    if (dist < 18.0 && this.hasLineOfSight(player)) {
       if (!this.isAiming) {
         this.cooldownTimer -= dt;
         if (this.cooldownTimer <= 0) {
@@ -178,6 +222,15 @@ export class ShadowArcher {
   dispose() {
     this.hurtbox.deactivate();
     combatManager.unregisterEntity(this);
+    const disposedMats = new Set();
+    this.meshGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        obj.material.dispose();
+      }
+    });
+    this.meshGroup.clear();
     this.scene.remove(this.meshGroup);
   }
 }

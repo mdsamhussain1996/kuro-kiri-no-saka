@@ -18,7 +18,7 @@ export const SUMIE_VERTEX_SHADER = /* glsl */ `
     vUv = uv;
     vLocalPosition = position;
     vNormal = normalize(normalMatrix * normal);
-    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    vWorldNormal = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
     vWorldPosition = worldPos.xyz;
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
@@ -258,7 +258,8 @@ export const OUTLINE_VERTEX_SHADER = /* glsl */ `
   void main() {
     vec4 worldPos = modelMatrix * vec4(position, 1.0);
     vWorldPos = worldPos.xyz;
-    vWorldNorm = normalize(mat3(modelMatrix) * normal);
+    vec3 viewNorm = normalize(normalMatrix * normal);
+    vWorldNorm = normalize((vec4(viewNorm, 0.0) * viewMatrix).xyz);
     // Sinusoidal brush-pressure modulation (thinner on sunlit top faces, fuller in crevices)
     float pressure = (0.65 + 0.38 * sin(worldPos.x * 3.4 + worldPos.y * 5.1 + worldPos.z * 2.7))
                    * (1.05 - 0.35 * clamp(vWorldNorm.y, 0.0, 1.0));
@@ -329,16 +330,25 @@ export function createSumieMaterial(options = {}) {
   });
 }
 
+const _outlineMatCache = new Map();
+
 export function createInkOutlineMaterial(thickness = 0.022, color = 0x0e0d0a) {
-  return new THREE.ShaderMaterial({
+  const hex = new THREE.Color(color).getHex();
+  const key = `${thickness.toFixed(4)}_${hex}`;
+  if (_outlineMatCache.has(key)) {
+    return _outlineMatCache.get(key);
+  }
+  const mat = new THREE.ShaderMaterial({
     vertexShader: OUTLINE_VERTEX_SHADER,
     fragmentShader: OUTLINE_FRAGMENT_SHADER,
     side: THREE.BackSide,
     uniforms: {
       uOutlineThickness: { value: thickness },
-      uOutlineColor: { value: new THREE.Color(color) },
+      uOutlineColor: { value: new THREE.Color(hex) },
     },
   });
+  _outlineMatCache.set(key, mat);
+  return mat;
 }
 
 export function addInkOutline(mesh, thickness = 0.022, color = 0x0e0d0a) {

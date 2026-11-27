@@ -66,12 +66,19 @@ export class Loop {
       let delta = (currentTime - this.lastTime) / 1000;
       this.lastTime = currentTime;
 
-      // Clamp delta to prevent spiral of death / floor tunneling on lag spikes
-      if (delta > this.maxDelta) {
+      // Clamp delta to prevent negative deltas or spiral of death / floor tunneling on lag spikes
+      if (delta < 0) {
+        delta = 0;
+      } else if (delta > this.maxDelta) {
         delta = this.maxDelta;
       }
 
       if (!this.paused) {
+        // Update input buffer timers with real delta even during hit-stop
+        if (this.onInputUpdate) {
+          this.onInputUpdate(delta);
+        }
+
         // Process hit-stop
         if (this.hitStopRemaining > 0) {
           this.hitStopRemaining -= delta;
@@ -84,11 +91,6 @@ export class Loop {
 
         const scaledDelta = delta * this.timeScale;
         this.accumulator += scaledDelta;
-
-        // Update input buffer timers with real delta
-        if (this.onInputUpdate) {
-          this.onInputUpdate(delta);
-        }
 
         // Consume fixed simulation steps
         let stepsTaken = 0;

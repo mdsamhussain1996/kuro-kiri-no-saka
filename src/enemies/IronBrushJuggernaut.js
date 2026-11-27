@@ -29,6 +29,9 @@ export class IronBrushJuggernaut {
     this.isAirborne = false;
     this.staggerTimer = 0;
     this.attackCooldown = 1.5;
+    this.attackWindupTimer = 0;
+    this.attackActiveTimer = 0;
+    this.velocity = { x: 0, y: 0 };
 
     this.hurtbox = new Hitbox({
       owner: this,
@@ -101,20 +104,27 @@ export class IronBrushJuggernaut {
     this.scene.add(this.meshGroup);
   }
 
-  takeDamage(amount = 1, sourceX = 0) {
-    if (this.isDead) return;
+  takeDamage(amount = 1, isBypassShield = false, attackerX = 0) {
+    if (this.isDead) return false;
 
-    // Check if attack came from the FRONT (shielded side) while not staggered!
-    const attackFromFront = (sourceX - this.aabb.x) * this.facing > 0;
-    if (attackFromFront && !this.isStaggered) {
+    let bypass = isBypassShield === true || this.isStaggered;
+    let srcX = attackerX;
+    if (typeof isBypassShield === 'number') {
+      srcX = isBypassShield;
+      bypass = this.isStaggered;
+    }
+
+    // Check if attack came from the FRONT (shielded side) while not bypassed/staggered!
+    const attackFromFront = (srcX - this.aabb.x) * this.facing > 0;
+    if (attackFromFront && !bypass) {
       if (this.inkSplash) {
         this.inkSplash.spawnHitImpact(this.aabb.x + this.facing * 0.7, this.aabb.y, this.facing, 6, false, false);
       }
       events.emit('boss_clink');
-      return;
+      return false;
     }
 
-    // Rear / Flank Strike (or Staggered) deals double damage!
+    // Rear / Flank / Bypass Strike (or Staggered) deals double damage!
     this.hp -= amount * 2;
     if (this.inkSplash) {
       this.inkSplash.spawnHitImpact(this.aabb.x, this.aabb.y, -this.facing, 18, true, true);
@@ -122,55 +132,102 @@ export class IronBrushJuggernaut {
     if (this.hp <= 0) {
       this.die();
     }
+    return true;
+  }
+
+  stagger(duration = 2.2) {
+    this.isStaggered = true;
+    this.staggerTimer = duration;
+    this.attackWindupTimer = 0;
+    this.attackActiveTimer = 0;
+    this.attackHitbox.deactivate();
   }
 
   onParried() {
-    this.isStaggered = true;
-    this.staggerTimer = 2.2;
-    this.attackHitbox.deactivate();
+    this.stagger(2.2);
   }
 
   die() {
     this.isDead = true;
     this.hurtbox.deactivate();
     this.attackHitbox.deactivate();
+    combatManager.unregisterEntity(this);
     this.meshGroup.visible = false;
     if (this.inkSplash) {
       this.inkSplash.spawnDeathDissolve(this.aabb.x, this.aabb.y, this.width, this.height);
     }
+    events.emit('enemy_killed', { enemy: this });
   }
 
   fixedUpdate(dt, player) {
     if (this.isDead || !player) return;
 
+    // Gravity
+    const g = this.velocity.y > 0 ? CONFIG.PLAYER.gravityRising : CONFIG.PLAYER.gravityFalling;
+    this.velocity.y += g * dt;
+    if (this.velocity.y < CONFIG.PLAYER.maxFallSpeed) {
+      this.velocity.y = CONFIG.PLAYER.maxFallSpeed;
+    }
+
     if (this.staggerTimer > 0) {
       this.staggerTimer -= dt;
+      this.velocity.x = 0;
       if (this.staggerTimer <= 0) {
         this.isStaggered = false;
       }
-      return;
-    }
-
-    // Slow turn rate so Kuro can Ink Step behind his shield!
-    const dx = player.aabb.x - this.aabb.x;
-    const dist = Math.abs(dx);
-
-    if (dist < 10.0) {
-      this.attackCooldown -= dt;
-      if (this.attackCooldown <= 0) {
-        this.facing = dx >= 0 ? 1 : -1;
+    } else if (this.attackWindupTimer > 0) {
+      this.velocity.x = 0;
+      this.attackWindupTimer -= dt;
+      if (this.attackWindupTimer <= 0) {
         this.attackHitbox.activate();
+        this.attackActiveTimer = 0.24;
         this.attackCooldown = 1.65;
-        setTimeout(() => {
-          if (!this.isDead) this.attackHitbox.deactivate();
-        }, 240);
-      } else if (dist > 1.8) {
-        this.aabb.x += this.facing * 2.2 * dt;
+      }
+    } else if (this.attackActiveTimer > 0) {
+      this.velocity.x = 0;
+      this.attackActiveTimer -= dt;
+      if (this.attackActiveTimer <= 0) {
+        this.attackHitbox.deactivate();
       }
     } else {
-      this.aabb.x += this.facing * 1.6 * dt;
-      if (this.aabb.x <= this.patrolMinX) this.facing = 1;
-      if (this.aabb.x >= this.patrolMaxX) this.facing = -1;
+      // Slow turn rate so Kuro can Ink Step behind his shield!
+      const dx = player.aabb.x - this.aabb.x;
+      const dist = Math.abs(dx);
+
+      if (dist < 10.0) {
+        this.attackCooldown -= dt;
+        if (this.attackCooldown <= 0) {
+          this.facing = dx >= 0 ? 1 : -1;
+          this.attackWindupTimer = 0.45;
+          this.velocity.x = 0;
+        } else if (dist > 1.8) {
+          this.velocity.x = this.facing * 2.2;
+        } else {
+          this.velocity.x = 0;
+        }
+      } else {
+        this.velocity.x = this.facing * 1.6;
+        if (this.aabb.x <= this.patrolMinX) this.facing = 1;
+        if (this.aabb.x >= this.patrolMaxX) this.facing = -1;
+      }
+    }
+
+    if (this.collision) {
+      const col = this.collision.moveAndSlide(this.aabb, this.velocity, dt, false);
+      if (col.grounded) {
+        this.velocity.y = 0;
+      }
+    } else {
+      this.aabb.x += this.velocity.x * dt;
+    }
+
+    // Clamp to patrol bounds so Juggernaut does not walk off ledges
+    if (this.aabb.x < this.patrolMinX) {
+      this.aabb.x = this.patrolMinX;
+      this.facing = 1;
+    } else if (this.aabb.x > this.patrolMaxX) {
+      this.aabb.x = this.patrolMaxX;
+      this.facing = -1;
     }
 
     this.hurtbox.updatePosition(this.aabb.x, this.aabb.y, this.facing);
@@ -187,6 +244,15 @@ export class IronBrushJuggernaut {
     this.hurtbox.deactivate();
     this.attackHitbox.deactivate();
     combatManager.unregisterEntity(this);
+    const disposedMats = new Set();
+    this.meshGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        obj.material.dispose();
+      }
+    });
+    this.meshGroup.clear();
     this.scene.remove(this.meshGroup);
   }
 }

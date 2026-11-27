@@ -67,6 +67,11 @@ export class InkRippleManager {
 
   dispose() {
     this.pool.releaseAll();
+    for (const item of this.pool.freeList) {
+      this.scene.remove(item.mesh);
+      item.mesh.material.dispose();
+    }
+    this.pool.freeList.length = 0;
     this.sharedGeometry.dispose();
     this.sharedMaterial.dispose();
   }

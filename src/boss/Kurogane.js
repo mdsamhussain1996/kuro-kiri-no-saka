@@ -16,6 +16,8 @@ export class Kurogane {
     this.shockwaves = shockwaves;
 
     const cfg = CONFIG.BOSS;
+    this._spawnX = x;
+    this.isBoss = true;
     this.aabb = new AABB(x, y + cfg.height * 0.5, cfg.width, cfg.height);
     this.velocity = { x: 0, y: 0 };
     this.facing = -1; // 1 = right, -1 = left
@@ -31,11 +33,13 @@ export class Kurogane {
     this.retriesInPhase = 0;
     this.isDead = false;
 
-    events.on('player:respawn', () => {
+    this._unsubRespawn = events.on('player:respawn', () => {
       if (this.isDead || this.fsm.isInState('Dormant')) return;
+      if (this._lastPlayerX !== undefined && this._lastPlayerX > 290) return;
       this.attackHitbox.deactivate();
       this.isVulnerable = false;
       this.isStaggered = false;
+      this.canBeParried = false;
       this.retriesInPhase++;
       if (this.retriesInPhase <= 2 && this.phase > 1) {
         this.hp = this.phase === 3 ? Math.ceil(this.maxHp * 0.25) : Math.ceil(this.maxHp * 0.6);
@@ -54,6 +58,7 @@ export class Kurogane {
 
     // AI & Decision Timers
     this.stateTimer = 0;
+    this.sweepWaveTimer = 0;
     this.decisionTimer = 1.0;
     this.farDistanceTimer = 0;
     this.vulnerableTimer = 0;
@@ -296,7 +301,7 @@ export class Kurogane {
     addInkOutline(this.mask, 0.032);
     this.meshGroup.add(this.mask);
 
-    // 6. Weak Point Back Plate (Glowing Vermilion Crack)
+    // 6. Weak Point Back Plate (Glowing Vermilion Crack) & Vulnerability Aura Ring
     const weakGeo = new THREE.BoxGeometry(0.28, 0.95, 0.85);
     this.weakMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
@@ -304,6 +309,19 @@ export class Kurogane {
     this.weakMesh = new THREE.Mesh(weakGeo, this.weakMat);
     this.weakMesh.position.set(-cfg.width * 0.42, 0.35, 0);
     this.meshGroup.add(this.weakMesh);
+
+    const vulnRingGeo = new THREE.RingGeometry(1.35, 1.58, 24);
+    this.vulnAuraMat = new THREE.MeshBasicMaterial({
+      color: 0xb8292f,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+    });
+    this.vulnAura = new THREE.Mesh(vulnRingGeo, this.vulnAuraMat);
+    this.vulnAura.position.set(0, 0.35, -0.45);
+    this.vulnAura.visible = false;
+    this.meshGroup.add(this.vulnAura);
 
     // 7. Curved Japanese Ōdachi / Nodachi Katana with Animated Falling Ink Droplets!
     this.swordGroup = new THREE.Group();
@@ -379,13 +397,15 @@ export class Kurogane {
     // --- DORMANT (WAITING FOR PLAYER ARENA ENTRY) ---
     this.fsm.addState('Dormant', {
       enter: () => {
+        this.aabb.x = this._spawnX;
         this.aabb.y = this.groundY + 5.5; // Perched up on Torii
-        this.meshGroup.position.y = this.groundY + 5.5;
+        this.meshGroup.position.set(this.aabb.x, this.aabb.y, 0);
         this.attackHitbox.deactivate();
+        this._resetVisualPose();
       },
       fixedUpdate: (dt, player) => {
-        // Player crosses into boss arena threshold (x >= 246)
-        if (player && player.aabb.x >= 246) {
+        // Player crosses into Act I boss arena bounds (246..284)
+        if (player && player.aabb.x >= 246 && player.aabb.x <= 284) {
           this.fsm.changeState('Intro');
         }
       }
@@ -408,9 +428,9 @@ export class Kurogane {
             this.aabb.y = this.groundY + cfg.height * 0.5;
             this.velocity.y = 0;
 
-            // LANDING IMPACT!
+            // LANDING IMPACT! (visual-only shockwave during Intro so player isn't hit before combat)
             events.emit('camera_shake', { amount: 0.65 });
-            this.shockwaves.spawnRingShockwave(this.aabb.x, this.groundY);
+            this.shockwaves.spawnRingShockwave(this.aabb.x, this.groundY, 0);
             if (this.inkSplash) {
               this.inkSplash.spawnHitImpact(this.aabb.x, this.groundY, 1, 24, true);
               this.inkSplash.spawnHitImpact(this.aabb.x, this.groundY, -1, 24, true);
@@ -431,6 +451,7 @@ export class Kurogane {
         this.isVulnerable = false;
         this.canBeParried = false;
         this.attackHitbox.deactivate();
+        this.tipMat.color.set(CONFIG.PALETTE.inkDark);
       },
       fixedUpdate: (dt, player) => {
         if (!player || player.health <= 0) return;
@@ -508,12 +529,10 @@ export class Kurogane {
         );
 
         if (this.phase >= 2) {
-          // Phase 2 Triple Wave: secondary low/high staggered waves
-          setTimeout(() => {
-            if (!this.isDead) {
-              this.shockwaves.spawnFloorWave(this.aabb.x + this.facing * 2.0, this.groundY, this.facing, cfg.sweepSpeed * 1.1);
-            }
-          }, 180);
+          // Phase 2 Triple Wave: secondary staggered wave via fixedUpdate timer
+          this.sweepWaveTimer = 0.18;
+        } else {
+          this.sweepWaveTimer = 0;
         }
 
         // Forward swing animation
@@ -521,10 +540,17 @@ export class Kurogane {
         events.emit('camera_shake', { amount: 0.25 });
       },
       fixedUpdate: (dt) => {
+        if (this.sweepWaveTimer > 0) {
+          this.sweepWaveTimer -= dt;
+          if (this.sweepWaveTimer <= 0) {
+            this.shockwaves.spawnFloorWave(this.aabb.x + this.facing * 2.0, this.groundY, this.facing, cfg.sweepSpeed * 1.1);
+          }
+        }
         this.stateTimer -= dt;
         if (this.stateTimer <= 0) {
           this.attackHitbox.deactivate();
           this.canBeParried = false;
+          this.sweepWaveTimer = 0;
           this.fsm.changeState('Decide');
         }
       }
@@ -536,6 +562,7 @@ export class Kurogane {
         const speedMod = this.phase >= 2 ? 0.85 : 1.0;
         this.stateTimer = 0.9 * speedMod;
         this.swordGroup.rotation.z = Math.PI * 0.7; // Raise blade vertically high
+        this.tipMat.color.setHex(0xb8292f);
       },
       fixedUpdate: (dt) => {
         this.stateTimer -= dt;
@@ -584,8 +611,9 @@ export class Kurogane {
         if (this.vulnerableTimer <= 0) {
           this.isVulnerable = false;
           this.weakMat.color.setHex(0x141413);
-          this.swordGroup.position.set(0.6, 0.2, 0.7);
-          this.swordGroup.rotation.z = 0;
+          this.tipMat.color.set(CONFIG.PALETTE.inkDark);
+          this.swordGroup.position.set(0.62, -0.05, 0.58);
+          this.swordGroup.rotation.z = -0.24;
           this.fsm.changeState('Decide');
         }
       }
@@ -731,6 +759,7 @@ export class Kurogane {
       enter: () => {
         this.stateTimer = 1.4;
         this.attackHitbox.deactivate();
+        this._resetVisualPose();
         events.emit('camera_shake', { amount: 0.5 });
         if (this.inkSplash) {
           this.inkSplash.spawnParryBurst(this.aabb.x, this.aabb.y, true);
@@ -789,11 +818,8 @@ export class Kurogane {
     // Check if hit was during a vulnerable window
     if (!this.isVulnerable && !isWeakPoint) {
       // Clink protection! Armored shell blocks basic hits
-      if (this.inkSplash) {
-        this.inkSplash.spawnHitImpact(attackerX, this.aabb.y, this.facing, 4, false);
-      }
       events.emit('boss_clink');
-      return;
+      return false;
     }
 
     // Damage calculation: Weak point hit does x2 damage
@@ -806,7 +832,7 @@ export class Kurogane {
     // Check Death
     if (this.hp <= 0) {
       this.fsm.changeState('Dying');
-      return;
+      return true;
     }
 
     // Check Phase Transitions
@@ -818,6 +844,7 @@ export class Kurogane {
       this.phase = 3;
       this.fsm.changeState('PhaseTransition');
     }
+    return true;
   }
 
   // Triggered when player parries Sweep in Phase 3
@@ -829,7 +856,14 @@ export class Kurogane {
 
   fixedUpdate(dt, player) {
     if (this.isDead) return;
+    if (player) {
+      this._lastPlayerX = player.aabb.x;
+    }
     if (player && (player.health <= 0 || player.fsm?.isInState('Dead'))) {
+      this.attackHitbox.deactivate();
+      return;
+    }
+    if (player && player.aabb.x > 290 && !this.fsm.isInState('Dormant')) {
       this.attackHitbox.deactivate();
       return;
     }
@@ -873,12 +907,62 @@ export class Kurogane {
       this.bossCape.rotation.z = -0.22 + Math.sin(t * 3.8) * 0.07;
       this.bossCape.rotation.y = 0.18 + Math.cos(t * 2.9) * 0.06;
     }
+
+    // Pulse vermilion vulnerability ring so punish windows are clearly readable
+    if (this.vulnAura) {
+      this.vulnAura.visible = this.isVulnerable && !this.isDead;
+      if (this.vulnAura.visible) {
+        const pulse = 1.0 + Math.sin(t * 12.0) * 0.1;
+        this.vulnAura.scale.set(pulse, pulse, 1);
+        this.vulnAuraMat.opacity = 0.55 + Math.sin(t * 12.0) * 0.25;
+      }
+    }
+  }
+
+  _resetVisualPose() {
+    this.isVulnerable = false;
+    this.isStaggered = false;
+    this.canBeParried = false;
+    this.sweepWaveTimer = 0;
+    if (this.weakMat) this.weakMat.color.setHex(0x141413);
+    if (this.tipMat) this.tipMat.color.set(CONFIG.PALETTE.inkDark);
+    if (this.torso) this.torso.rotation.z = 0;
+    if (this.swordGroup) {
+      this.swordGroup.position.set(0.62, -0.05, 0.58);
+      this.swordGroup.rotation.z = -0.24;
+    }
+    if (this.vulnAura) this.vulnAura.visible = false;
+  }
+
+  resetForEncounter() {
+    this.isDead = false;
+    this.hp = this.maxHp;
+    this.phase = 1;
+    this.retriesInPhase = 0;
+    this.facing = -1;
+    this.meshGroup.visible = true;
+    this.bodyHurtbox.activate();
+    this.attackHitbox.deactivate();
+    combatManager.unregisterEntity(this);
+    combatManager.registerEnemyHurtbox(this.bodyHurtbox);
+    combatManager.registerEnemyAttack(this.attackHitbox);
+    this._resetVisualPose();
+    this.fsm.changeState('Dormant', null, true);
   }
 
   dispose() {
+    this._unsubRespawn?.();
     this.bodyHurtbox.deactivate();
     this.attackHitbox.deactivate();
     combatManager.unregisterEntity(this);
+    const disposedMats = new Set();
+    this.meshGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        obj.material.dispose();
+      }
+    });
     this.meshGroup.clear();
     this.scene.remove(this.meshGroup);
   }

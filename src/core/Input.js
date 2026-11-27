@@ -42,6 +42,7 @@ export class Input {
     this.dashBufferTimer = 0;
     this.paintBridgeBufferTimer = 0;
     this.bellBufferTimer = 0;
+    this.ippitsuBufferTimer = 0;
     this.cameraPressedThisStep = false;
     this.pausePressedThisStep = false;
     this.mutePressedThisStep = false;
@@ -114,6 +115,7 @@ export class Input {
     if (C.dash.keys.includes(code)) this.dashBufferTimer = C.dash.buffer;
     if (C.paintBridge.keys.includes(code)) this.paintBridgeBufferTimer = 0.12;
     if (C.bell.keys.includes(code)) this.bellBufferTimer = 0.12;
+    if (C.ippitsu?.keys.includes(code)) this.ippitsuBufferTimer = 0.12;
     if (C.camera.keys.includes(code)) this.cameraPressedThisStep = true;
   }
 
@@ -164,6 +166,7 @@ export class Input {
     this.parryBufferTimer = 0;
     this.paintBridgeBufferTimer = 0;
     this.bellBufferTimer = 0;
+    this.ippitsuBufferTimer = 0;
     this.cameraPressedThisStep = false;
     this.pausePressedThisStep = false;
     this.mutePressedThisStep = false;
@@ -181,11 +184,9 @@ export class Input {
     if (this.parryBufferTimer > 0) this.parryBufferTimer = Math.max(0, this.parryBufferTimer - dt);
     if (this.paintBridgeBufferTimer > 0) this.paintBridgeBufferTimer = Math.max(0, this.paintBridgeBufferTimer - dt);
     if (this.bellBufferTimer > 0) this.bellBufferTimer = Math.max(0, this.bellBufferTimer - dt);
+    if (this.ippitsuBufferTimer > 0) this.ippitsuBufferTimer = Math.max(0, this.ippitsuBufferTimer - dt);
 
     // 1. Poll Gamepad with edge detection + 0.25 radial deadzone
-    this.gamepadButtonsPressedThisStep.clear();
-    this.gamepadButtonsReleasedThisStep.clear();
-
     let gpX = 0;
     let gpY = 0;
     const gp = this.getGamepad();
@@ -237,8 +238,6 @@ export class Input {
     }
 
     // 2. Poll Touch Controls edge detection
-    this.touchPressedThisStep.clear();
-    this.touchReleasedThisStep.clear();
     for (const k of Object.keys(this.touchState)) {
       const nowT = !!this.touchState[k];
       const prevT = !!this.prevTouchState[k];
@@ -285,6 +284,10 @@ export class Input {
     this.keysPressedThisStep.clear();
     this.keysReleasedThisStep.clear();
     this.mousePressedThisStep.clear();
+    this.gamepadButtonsPressedThisStep.clear();
+    this.gamepadButtonsReleasedThisStep.clear();
+    this.touchPressedThisStep.clear();
+    this.touchReleasedThisStep.clear();
     this.cameraPressedThisStep = false;
     this.pausePressedThisStep = false;
     this.mutePressedThisStep = false;
@@ -379,6 +382,14 @@ export class Input {
 
   consumeBell() {
     this.bellBufferTimer = 0;
+  }
+
+  get ippitsuPressed() {
+    return !this.blocked && this.ippitsuBufferTimer > 0;
+  }
+
+  consumeIppitsu() {
+    this.ippitsuBufferTimer = 0;
   }
 
   get cameraPressed() {

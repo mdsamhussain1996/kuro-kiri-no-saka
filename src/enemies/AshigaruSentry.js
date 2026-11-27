@@ -180,7 +180,7 @@ export class AshigaruSentry {
   }
 
   get isUnaware() {
-    return this.fsm.isInState('Patrol') || this.fsm.isInState('Alert');
+    return this.fsm.isInState('Patrol');
   }
 
   setupFSM() {
@@ -484,6 +484,15 @@ export class AshigaruSentry {
     this.hurtbox.deactivate();
     this.attackHitbox.deactivate();
     combatManager.unregisterEntity(this);
+    const disposedMats = new Set();
+    this.meshGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        if (obj.material.map) obj.material.map.dispose();
+        obj.material.dispose();
+      }
+    });
     this.meshGroup.clear();
     this.scene.remove(this.meshGroup);
   }

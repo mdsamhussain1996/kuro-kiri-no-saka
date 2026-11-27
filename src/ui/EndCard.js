@@ -4,7 +4,10 @@ import { events } from '../core/EventBus.js';
 import { saveSystem } from '../core/SaveSystem.js';
 
 export class EndCard {
-  constructor() {
+  constructor(onShow = null) {
+    this.onShow = onShow;
+    this._showTimeout = null;
+    this._sealTimeout = null;
     this.container = document.createElement('div');
     this.container.id = 'end-card';
     this.container.style.cssText = `
@@ -146,9 +149,10 @@ export class EndCard {
     const uiRoot = document.getElementById('ui-root') || document.body;
     uiRoot.appendChild(this.container);
 
-    events.on('campaign_sunrise_victory', () => {
+    this._unsubVictory = events.on('campaign_sunrise_victory', () => {
       saveSystem.update({ postCampaignUnlocked: true });
-      setTimeout(() => this.show(), 3200);
+      if (this._showTimeout) clearTimeout(this._showTimeout);
+      this._showTimeout = setTimeout(() => this.show(), 3200);
     });
   }
 
@@ -223,9 +227,14 @@ export class EndCard {
     `;
     this.container.style.opacity = '1';
     this.container.style.pointerEvents = 'auto';
+    if (typeof this.onShow === 'function') {
+      this.onShow();
+    }
+    events.emit('end_card_shown');
 
     // Stamp vermilion seal onto parchment with impact
-    setTimeout(() => {
+    if (this._sealTimeout) clearTimeout(this._sealTimeout);
+    this._sealTimeout = setTimeout(() => {
       this.seal.style.opacity = '1';
       this.seal.style.transform = 'scale(1.0) rotate(-6deg)';
       events.emit('camera_shake', { amount: 0.3 });
@@ -233,6 +242,9 @@ export class EndCard {
   }
 
   dispose() {
+    this._unsubVictory?.();
+    if (this._showTimeout) clearTimeout(this._showTimeout);
+    if (this._sealTimeout) clearTimeout(this._sealTimeout);
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }

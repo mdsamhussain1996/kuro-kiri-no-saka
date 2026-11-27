@@ -9,7 +9,7 @@ export class RainSystem {
     this.scene = scene;
     this.dropCount = 350;
     this.active = false;
-    this.lightningTimer = 0;
+    this.lightningTimer = 4.0 + Math.random() * 6.0;
     this.lightningFlash = 0;
 
     // BufferGeometry for slanted rain streaks
@@ -51,8 +51,8 @@ export class RainSystem {
   }
 
   update(dt, playerX, playerY) {
-    // Only active in Act II (x 105 to 232)
-    this.active = playerX >= 105 && playerX <= 232;
+    // Active in Ch 3 storm (x 105..232) and Ch 5-6 Silent Sanctuary storm (x 295..558)
+    this.active = (playerX >= 105 && playerX <= 232) || (playerX >= 295 && playerX <= 558);
     this.lineSegments.visible = this.active;
 
     if (!this.active) return;

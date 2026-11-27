@@ -17,28 +17,43 @@ export class LadyShirayuki {
     this.projectiles = projectiles;
 
     this.name = 'Lady Shirayuki, the Mist Weaver';
+    this.isBoss = true;
     this.width = 1.3;
     this.height = 3.2;
+    this._spawnX = x;
     this.groundY = y;
-    this.aabb = new AABB(x, y + 3.0, this.width, this.height);
+    this.baseY = y + 3.0;
+    this.aabb = new AABB(x, this.baseY, this.width, this.height);
     this.facing = -1;
 
-    this.maxHp = 56;
+    this.maxHp = 84;
     this.hp = this.maxHp;
     this.phase = 1;
     this.retriesInPhase = 0;
     this.isDead = false;
     this.isActive = false;
-    this.isVulnerable = false; // Only vulnerable in 1.4s window after needle fan or parry/bell stagger
+    this.isVulnerable = false; // Only vulnerable briefly after needle fan or parry/bell stagger
     this.vulnerableTimer = 0;
+    this._deflectCooldown = 0;
 
-    events.on('player:respawn', () => {
+    this._unsubRespawn = events.on('player:respawn', () => {
       if (this.isDead || !this.isActive) return;
+      if (this._lastPlayerX !== undefined && (this._lastPlayerX < 500 || this._lastPlayerX > 562)) return;
+      this.isActive = false;
       this.isVulnerable = false;
       this.vulnerableTimer = 0;
+      this.actionTimer = 1.6;
+      this.aabb.x = this._spawnX;
+      this.baseY = this.groundY + 3.0;
+      this.aabb.y = this.baseY;
+      for (const c of this.clones) {
+        c.active = false;
+        c.mesh.visible = false;
+      }
       this.retriesInPhase++;
       if (this.retriesInPhase <= 2 && this.phase === 2) {
         this.hp = Math.ceil(this.maxHp * 0.5);
+        this.summonMirrorClones();
       } else {
         this.phase = 1;
         this.hp = this.maxHp;
@@ -49,9 +64,9 @@ export class LadyShirayuki {
 
     this.actionTimer = 1.6;
     this.teleportPoints = [
-      { x: 515, y: y + 2.8 },
-      { x: 525, y: y + 4.2 },
-      { x: 535, y: y + 2.8 },
+      { x: 515, y: y + 3.0 },
+      { x: 525, y: y + 3.4 },
+      { x: 535, y: y + 3.0 },
     ];
 
     this.bodyHurtbox = new Hitbox({
@@ -161,7 +176,8 @@ export class LadyShirayuki {
 
   fireNeedleFan(player) {
     if (!this.projectiles || !player) return;
-    const dx = player.aabb.x - this.aabb.x;
+    const leadX = player.aabb.x + (player.velocity?.x || 0) * 0.25;
+    const dx = leadX - this.aabb.x;
     const dy = player.aabb.y - this.aabb.y;
     const baseAngle = Math.atan2(dy, dx);
     const count = this.phase === 2 ? 5 : 3;
@@ -170,7 +186,7 @@ export class LadyShirayuki {
     for (let i = 0; i < count; i++) {
       const offset = (i - (count - 1) * 0.5) * spread;
       const angle = baseAngle + offset;
-      const speed = 13.5;
+      const speed = 17.5;
       this.projectiles.spawnProjectile({
         x: this.aabb.x + this.facing * 0.6,
         y: this.aabb.y + 0.3,
@@ -185,42 +201,71 @@ export class LadyShirayuki {
 
   die() {
     this.isDead = true;
+    this.isActive = false;
     this.bodyHurtbox.deactivate();
+    combatManager.unregisterEntity(this);
     this.meshGroup.visible = false;
-    for (const c of this.clones) c.mesh.visible = false;
+    for (const c of this.clones) {
+      c.active = false;
+      c.mesh.visible = false;
+    }
 
     if (this.inkSplash) {
       this.inkSplash.spawnDeathDissolve(this.aabb.x, this.aabb.y, 2.0, 3.2);
     }
+    events.emit('boss_defeated', { boss: this });
     events.emit('scroll_unlocked', CONFIG.SCROLLS[1]);
     events.emit('act2_boss_defeated');
   }
 
-  takeDamage(amount = 1) {
-    if (this.isDead || !this.isActive) return;
-    if (!this.isVulnerable) {
+  takeDamage(amount = 1, isWeakPoint = false, attackerX = 0) {
+    if (this.isDead || !this.isActive) return false;
+    const isDeflectedNeedle = isWeakPoint === true || (typeof isWeakPoint === 'number' && attackerX === true);
+    if (!this.isVulnerable && !isDeflectedNeedle) {
       events.emit('boss_clink', { boss: this });
-      // Teleport away if attacked outside her punish window
-      const nextPt = this.teleportPoints[Math.floor(Math.random() * this.teleportPoints.length)];
+      // Teleport away from player if attacked outside her punish window
+      let nextPt = this.teleportPoints[0];
+      let bestDist = -1;
+      for (const pt of this.teleportPoints) {
+        const d = Math.abs(pt.x - (this._lastPlayerX ?? this.aabb.x));
+        if (d > bestDist) {
+          bestDist = d;
+          nextPt = pt;
+        }
+      }
       this.aabb.x = nextPt.x;
+      this.baseY = nextPt.y;
       this.aabb.y = nextPt.y;
-      return;
+      return false;
+    }
+    if (isDeflectedNeedle) {
+      if (this._deflectCooldown > 0) return false;
+      this._deflectCooldown = 0.35;
+      // Deflected needles stun-open her punish window for a follow-up slash
+      this.isVulnerable = true;
+      this.vulnerableTimer = Math.max(this.vulnerableTimer, 0.65);
     }
     this.hp = Math.max(0, this.hp - amount);
     events.emit('boss_damaged', { hp: this.hp, maxHp: this.maxHp });
     if (this.hp <= this.maxHp * 0.5 && this.phase === 1) {
       this.phase = 2;
+      this.summonMirrorClones();
       events.emit('camera_shake', { amount: 0.4 });
     }
     if (this.hp <= 0) {
       this.die();
     }
+    return true;
   }
 
   fixedUpdate(dt, player) {
     if (this.isDead || !player) return;
+    this._lastPlayerX = player.aabb.x;
     if (player.health <= 0 || player.fsm?.isInState('Dead')) return;
 
+    if (this._deflectCooldown > 0) {
+      this._deflectCooldown -= dt;
+    }
     if (this.vulnerableTimer > 0) {
       this.vulnerableTimer -= dt;
       if (this.vulnerableTimer <= 0) {
@@ -231,12 +276,13 @@ export class LadyShirayuki {
     // Activate boss HUD when player enters Act II Sanctuary Arena (x >= 504)
     if (!this.isActive && player.aabb.x >= 504 && player.aabb.x <= 558) {
       this.isActive = true;
+      if (this.phase >= 2) this.summonMirrorClones();
       events.emit('boss_intro_start', { name: this.name });
     }
     if (!this.isActive) return;
 
     const t = performance.now() * 0.001;
-    this.aabb.y += Math.sin(t * 2.8) * 0.025;
+    this.aabb.y = this.baseY + Math.sin(t * 2.8) * 0.28;
     this.facing = player.aabb.x >= this.aabb.x ? 1 : -1;
 
     this.actionTimer -= dt;
@@ -255,12 +301,13 @@ export class LadyShirayuki {
         }
       }
       this.aabb.x = nextPt.x;
+      this.baseY = nextPt.y;
       this.aabb.y = nextPt.y;
       this.facing = player.aabb.x >= this.aabb.x ? 1 : -1;
       this.fireNeedleFan(player);
       this.isVulnerable = true;
-      this.vulnerableTimer = 0.95; // Brief punish window after firing fan volley
-      this.actionTimer = this.phase === 2 ? 2.1 : 2.6;
+      this.vulnerableTimer = 0.5; // Brief punish window after firing fan volley
+      this.actionTimer = this.phase === 2 ? 1.9 : 2.4;
     }
 
     // Update orbiting ink-mirror clones
@@ -281,15 +328,63 @@ export class LadyShirayuki {
     if (this.isDead) return;
     this.meshGroup.position.set(this.aabb.x, this.aabb.y, 0);
     this.meshGroup.scale.x = this.facing;
-    if (this.auraRing) {
-      this.auraRing.rotation.z = performance.now() * 0.002;
+    if (this.auraRing && this.auraMat) {
+      const t = performance.now() * 0.001;
+      this.auraRing.rotation.z = t * (this.isVulnerable ? 5.0 : 2.0);
+      if (this.isVulnerable) {
+        const s = 1.25 + Math.sin(t * 12.0) * 0.12;
+        this.auraRing.scale.set(s, s, 1);
+        this.auraMat.color.setHex(0xb8292f);
+        this.auraMat.opacity = 0.92;
+      } else {
+        this.auraRing.scale.set(0.85, 0.85, 1);
+        this.auraMat.color.setHex(0x454849);
+        this.auraMat.opacity = 0.42;
+      }
     }
   }
 
+  resetForEncounter() {
+    this.isDead = false;
+    this.isActive = false;
+    this.isVulnerable = false;
+    this.vulnerableTimer = 0;
+    this._deflectCooldown = 0;
+    this.actionTimer = 1.6;
+    this.phase = 1;
+    this.hp = this.maxHp;
+    this.retriesInPhase = 0;
+    this.aabb.x = this._spawnX;
+    this.baseY = this.groundY + 3.0;
+    this.aabb.y = this.baseY;
+    this.facing = -1;
+    this.meshGroup.visible = true;
+    for (const c of this.clones) {
+      c.active = false;
+      c.mesh.visible = false;
+    }
+    this.bodyHurtbox.activate();
+    combatManager.unregisterEntity(this);
+    combatManager.registerEnemyHurtbox(this.bodyHurtbox);
+  }
+
   dispose() {
+    this._unsubRespawn?.();
     this.bodyHurtbox.deactivate();
     combatManager.unregisterEntity(this);
-    this.scene.remove(this.meshGroup);
-    for (const c of this.clones) this.scene.remove(c.mesh);
+    const disposedMats = new Set();
+    const disposeTree = (grp) => {
+      grp.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material && !disposedMats.has(obj.material)) {
+          disposedMats.add(obj.material);
+          obj.material.dispose();
+        }
+      });
+      grp.clear();
+      this.scene.remove(grp);
+    };
+    disposeTree(this.meshGroup);
+    for (const c of this.clones) disposeTree(c.mesh);
   }
 }

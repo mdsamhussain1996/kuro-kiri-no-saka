@@ -37,6 +37,7 @@ export class AudioEngine {
     this.weather = 'clear';
     this.activeVoices = 0;
     this.maxVoices = 24;
+    this._unsubs = [];
 
     this.setupEventListeners();
   }
@@ -144,6 +145,7 @@ export class AudioEngine {
     this.chapterId = chapterId;
     this.weather = weather;
     this.inBoss = !!inBoss;
+    if (!this.inBoss) this.bossPhase = 1;
     this.setRainIntensity(weather === 'rain' ? 1.0 : 0.0);
   }
 
@@ -447,6 +449,11 @@ export class AudioEngine {
     const beatSec = 60 / bpm;
     const lookahead = 0.15;
 
+    // Clamp catchup after unpause or background tab resume so notes don't burst
+    if (this.nextNoteTime < this.ctx.currentTime - 0.1) {
+      this.nextNoteTime = this.ctx.currentTime;
+    }
+
     while (this.nextNoteTime < this.ctx.currentTime + lookahead) {
       const step = this.musicStep % 16;
       const scaleIdx = (step * 3 + this.chapterId) % this.shamisenScale.length;
@@ -468,27 +475,65 @@ export class AudioEngine {
   }
 
   setupEventListeners() {
-    events.on('player_attack_swing', ({ isHeavy }) => this.playKatanaSlash(isHeavy));
-    events.on('player:dash', () => this.playDashWhoosh());
-    events.on('player:jump', () => this.playJump());
-    events.on('player:walljump', () => this.playJump());
-    events.on('player:land', ({ yVel }) => this.playLand(yVel));
-    events.on('player:footstep', ({ surface }) => this.playFootstep(surface));
-    events.on('bamboo_launch', () => this.playBambooSpring());
-    events.on('parry_perfect', () => this.playParryPing(true));
-    events.on('parry_late', () => this.playParryPing(false));
-    events.on('boss_clink', () => this.playParryPing(false));
-    events.on('enemy_alert', () => {
+    this._unsubs.push(events.on('player_attack_swing', ({ isHeavy }) => this.playKatanaSlash(isHeavy)));
+    this._unsubs.push(events.on('player:dash', () => this.playDashWhoosh()));
+    this._unsubs.push(events.on('player:jump', () => this.playJump()));
+    this._unsubs.push(events.on('player:walljump', () => this.playJump()));
+    this._unsubs.push(events.on('player:land', ({ yVel }) => this.playLand(yVel)));
+    this._unsubs.push(events.on('player:footstep', ({ surface }) => this.playFootstep(surface)));
+    this._unsubs.push(events.on('bamboo_launch', () => this.playBambooSpring()));
+    this._unsubs.push(events.on('parry_perfect', () => this.playParryPing(true)));
+    this._unsubs.push(events.on('parry_late', () => this.playParryPing(false)));
+    this._unsubs.push(events.on('boss_clink', () => this.playParryPing(false)));
+    this._unsubs.push(events.on('enemy_alert', () => {
       this.inCombat = true;
       this.combatDecayTimer = 8.0;
-    });
-    events.on('checkpoint_activated', () => {
+    }));
+    this._unsubs.push(events.on('checkpoint_activated', () => {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
       this.playShamisenPluck(523.25, 2.2, 0.75, t);
       this.playShamisenPluck(659.25, 2.5, 0.68, t + 0.2);
-    });
-    events.on('boss_defeated', () => this.playVictoryStinger());
-    events.on('campaign_sunrise_victory', () => this.playVictoryStinger());
+    }));
+    this._unsubs.push(events.on('boss_intro_start', () => {
+      this.inBoss = true;
+      this.bossPhase = 1;
+    }));
+    this._unsubs.push(events.on('boss_damaged', ({ hp, maxHp } = {}) => {
+      if (maxHp > 0) {
+        const ratio = hp / maxHp;
+        this.bossPhase = ratio <= 0.25 ? 3 : (ratio <= 0.60 ? 2 : 1);
+      }
+    }));
+    this._unsubs.push(events.on('player:respawn', () => {
+      this.inBoss = false;
+      this.bossPhase = 1;
+    }));
+    this._unsubs.push(events.on('act2_boss_defeated', () => {
+      this.inBoss = false;
+      this.bossPhase = 1;
+      this.playVictoryStinger();
+    }));
+    this._unsubs.push(events.on('boss_defeated', () => {
+      this.inBoss = false;
+      this.bossPhase = 1;
+      this.playVictoryStinger();
+    }));
+    this._unsubs.push(events.on('campaign_sunrise_victory', () => {
+      this.inBoss = false;
+      this.bossPhase = 1;
+    }));
+  }
+
+  dispose() {
+    for (const unsub of this._unsubs) {
+      unsub?.();
+    }
+    this._unsubs = [];
+    if (this.ctx && typeof this.ctx.close === 'function') {
+      this.ctx.close().catch(() => {});
+    }
+    this.ctx = null;
+    this.initialized = false;
   }
 }

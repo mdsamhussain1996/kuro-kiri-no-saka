@@ -53,7 +53,8 @@ export class KuroCombat {
     // Provide owner references for CombatManager
     this.player.isParrying = false;
     this.player.isPerfectParryWindow = () => {
-      return this.isParrying && this.parryTimer <= CONFIG.COMBAT.parryPerfectWindow;
+      const win = CONFIG.COMBAT.parryPerfectWindow * (this.player.assistMode ? 1.5 : 1.0);
+      return this.isParrying && this.parryTimer <= win;
     };
   }
 
@@ -162,7 +163,8 @@ export class KuroCombat {
     this.parryTimer += dt;
 
     // Parry duration ends after guard window
-    if (this.parryTimer >= CONFIG.COMBAT.parryGuardWindow) {
+    const guardWindow = CONFIG.COMBAT.parryGuardWindow * (this.player.assistMode ? 1.5 : 1.0);
+    if (this.parryTimer >= guardWindow) {
       this.endParry();
       if (this.player.coyoteTimer > 0) {
         this.player.fsm.changeState(this.player.input.axisX !== 0 ? 'Run' : 'Idle');
@@ -175,6 +177,7 @@ export class KuroCombat {
   endParry() {
     this.isParrying = false;
     this.player.isParrying = false;
+    this.parryTimer = 0;
   }
 
   // --- On Parry Successful (Invoked by CombatManager) ---
@@ -182,8 +185,12 @@ export class KuroCombat {
     if (isPerfect) {
       // Perfect Parry: Stagger enemy for 1.2s, vermilion flash, heavy shake, 60ms hit-stop
       const enemy = enemyAttack.owner;
-      if (enemy && enemy.stagger) {
-        enemy.stagger(CONFIG.ENEMIES.ashigaru.staggerDuration);
+      if (enemy) {
+        if (typeof enemy.stagger === 'function') {
+          enemy.stagger(CONFIG.ENEMIES.ashigaru.staggerDuration);
+        } else if (typeof enemy.onParried === 'function') {
+          enemy.onParried(true);
+        }
       }
 
       if (this.inkSplash) {
@@ -233,7 +240,8 @@ export class KuroCombat {
 
     // Check for Backstab:
     // If enemy is unaware OR staggered, AND Kuro is striking from behind (facing matches enemy facing)
-    const isBackstab = (enemy.isUnaware || enemy.isStaggered) && (this.player.facing === enemy.facing);
+    // Bosses are immune to instant-kill stealth backstab (take riposte damage instead).
+    const isBackstab = !enemy.isBoss && (enemy.isUnaware || enemy.isStaggered) && (this.player.facing === enemy.facing);
 
     if (isBackstab) {
       // BACKSTAB INSTANT KILL!
@@ -265,7 +273,32 @@ export class KuroCombat {
     // Riposte multiplier if enemy is staggered
     const finalDamage = enemy.isStaggered ? damage * CONFIG.COMBAT.riposteMultiplier : damage;
 
-    enemy.takeDamage(finalDamage, false, this.player.aabb.x);
+    const hitApplied = enemy.takeDamage(finalDamage, false, this.player.aabb.x);
+
+    // Armored clink (explicitly returned false): metallic deflect spark, slight recoil, no ink gain
+    if (hitApplied === false) {
+      if (this.inkSplash) {
+        if (typeof this.inkSplash.spawnClinkSpark === 'function') {
+          this.inkSplash.spawnClinkSpark(
+            this.player.aabb.x + this.player.facing * 0.9,
+            this.player.aabb.y,
+            this.player.facing
+          );
+        } else {
+          this.inkSplash.spawnParryBurst(
+            this.player.aabb.x + this.player.facing * 0.9,
+            this.player.aabb.y,
+            false
+          );
+        }
+      }
+      this.player.velocity.x = -this.player.facing * 2.2;
+      if (this.loop) {
+        this.loop.triggerHitStop(25);
+      }
+      events.emit('camera_shake', { amount: 0.08 });
+      return;
+    }
 
     // Air-slash bounce when hitting airborne or regular enemy in mid-air (Part C)
     if (!this.player.wasGroundedLastFrame && this.isAirAttack) {
@@ -306,7 +339,7 @@ export class KuroCombat {
 
     this.player.health = Math.max(0, this.player.health - amount);
     this.player.addInk?.(-100); // Taking damage spills 1 ink segment
-    this.player.invincibilityTimer = CONFIG.COMBAT.hurtInvincibility;
+    this.player.invincibilityTimer = CONFIG.COMBAT.hurtInvincibility * (this.player.assistMode ? 1.5 : 1.0);
 
     // Knockback away from damage source
     const knockbackDir = this.player.aabb.x >= sourceX ? 1 : -1;

@@ -92,14 +92,7 @@ export class BambooStalk {
 
       // Check if player jumps while bamboo is springing back up -> BOOST!
       if (player.input.jumpBuffered && this.deflection !== 0) {
-        const springPower = Math.abs(this.deflection) / this.maxDeflection;
-        const boostMultiplier = 1.0 + springPower * 0.5; // up to x1.5 boost per §6
-        player.velocity.y = CONFIG.PLAYER.jumpVelocity * boostMultiplier;
-        player.velocity.x += -Math.sign(this.deflection) * 4.0; // horizontal kick
-
-        // Launch rebound vibration
-        this.velocity = -Math.sign(this.deflection) * 18.0;
-        events.emit('bamboo_launch', { multiplier: boostMultiplier });
+        this.applyLaunchBoost(player);
       }
     } else {
       this.playerOnTop = false;
@@ -126,7 +119,6 @@ export class BambooStalk {
       this.segments[0].children[0].material.emissive.setHex(atReboundPeak ? 0xa8321f : 0x000000);
       this.segments[0].children[0].material.emissiveIntensity = atReboundPeak ? 0.65 : 0;
     }
-    this.topAABB.y = tipY;
 
     // Update 3D visual curvature across segments
     const curvaturePerSegment = tipAngle / this.segmentCount;
@@ -135,8 +127,30 @@ export class BambooStalk {
     }
   }
 
+  applyLaunchBoost(player) {
+    if (!player || this.deflection === 0) return false;
+    const springPower = Math.abs(this.deflection) / this.maxDeflection;
+    const boostMultiplier = 1.0 + springPower * 0.5; // up to x1.5 boost per §6
+    player.velocity.y = CONFIG.PLAYER.jumpVelocity * boostMultiplier;
+    const kickDir = Math.sign(this.deflection) || player.facing || 1;
+    player.velocity.x += kickDir * 4.0; // forward horizontal kick
+
+    // Launch rebound vibration
+    this.velocity = -Math.sign(this.deflection) * 18.0;
+    events.emit('bamboo_launch', { multiplier: boostMultiplier });
+    return true;
+  }
+
   dispose() {
     this.collision.removeSolid(this.solidRef);
+    const disposedMats = new Set();
+    this.group.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        obj.material.dispose();
+      }
+    });
     this.group.clear();
     this.scene.remove(this.group);
   }

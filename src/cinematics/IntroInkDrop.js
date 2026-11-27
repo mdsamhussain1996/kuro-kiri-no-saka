@@ -10,6 +10,13 @@ export class IntroInkDrop {
     this.canSkip = true; // allow skipping immediately if user presses a key
     this.completed = false;
 
+    if (typeof document !== 'undefined' && !document.getElementById('kuro-pulse-style')) {
+      const style = document.createElement('style');
+      style.id = 'kuro-pulse-style';
+      style.textContent = '@keyframes kuro-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }';
+      document.head.appendChild(style);
+    }
+
     // Overlay container
     this.container = document.createElement('div');
     this.container.id = 'intro-cinematic';
@@ -107,8 +114,9 @@ export class IntroInkDrop {
 
     this.startAnimation();
 
-    // Skip listener after 2s
+    // Skip listener (ignore Pause keys Esc/P so pause state isn't clobbered)
     this.skipHandler = (e) => {
+      if (e.type === 'keydown' && (e.code === 'Escape' || e.code === 'KeyP')) return;
       if (this.canSkip && !this.completed) {
         this.finish();
       }
@@ -142,9 +150,8 @@ export class IntroInkDrop {
         ctx.fill();
       } else if (!hit) {
         hit = true;
-        // Resonant shamisen pluck on impact
-        if (this.audioEngine) {
-          this.audioEngine.ensureContext();
+        // Resonant shamisen pluck on impact (only if AudioContext already running; avoid autoplay warning)
+        if (this.audioEngine && this.audioEngine.ctx?.state === 'running') {
           this.audioEngine.playShamisenPluck(329.63, 2.5, 1.0);
         }
         events.emit('camera_shake', { amount: 0.25 });

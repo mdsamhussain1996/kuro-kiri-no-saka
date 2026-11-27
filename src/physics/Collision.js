@@ -106,6 +106,13 @@ export class CollisionSystem {
     return item;
   }
 
+  removeTrigger(ref) {
+    if (!ref) return false;
+    const i = this.triggers.indexOf(ref);
+    if (i !== -1) { this.triggers.splice(i, 1); return true; }
+    return false;
+  }
+
   clear() {
     this.solids.length = 0;
     this.oneWays.length = 0;
@@ -275,7 +282,8 @@ export class CollisionSystem {
 
         let spaceBlocked = false;
         for (let j = 0; j < this.solids.length; j++) {
-          if (j !== i && clearanceBox.overlaps(this.solids[j].aabb)) {
+          if (j === i || this.solids[j].crumbleState === 'collapsed') continue;
+          if (clearanceBox.overlaps(this.solids[j].aabb)) {
             spaceBlocked = true;
             break;
           }

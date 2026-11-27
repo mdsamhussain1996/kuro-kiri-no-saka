@@ -37,6 +37,7 @@ export class KuroModel {
       noiseScale: 7.0,
       darkBias: 0.15,
     });
+    this.sumieMats = [matDark, matMid, matArmor];
 
     // ---------------- 1. TORSO, GI & SHOULDER MANTLE ----------------
     this.torsoGroup = new THREE.Group();

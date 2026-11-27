@@ -10,8 +10,8 @@ export class InkShockwaveManager {
     this.scene = scene;
 
     // 1. Traveling Floor Ink Waves (Sweep Attack)
-    const waveGeo = new THREE.PlaneGeometry(1.4, 0.9);
-    const waveMat = new THREE.MeshBasicMaterial({
+    this._waveGeo = new THREE.PlaneGeometry(1.4, 0.9);
+    this._waveMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
       side: THREE.DoubleSide,
       transparent: true,
@@ -21,7 +21,7 @@ export class InkShockwaveManager {
 
     this.wavePool = new Pool(
       () => {
-        const mesh = new THREE.Mesh(waveGeo, waveMat.clone());
+        const mesh = new THREE.Mesh(this._waveGeo, this._waveMat.clone());
         mesh.visible = false;
         this.scene.add(mesh);
 
@@ -43,15 +43,21 @@ export class InkShockwaveManager {
           active: false,
         };
       },
-      (item, x, y, direction = 1, speed = 14.0) => {
+      (item, x, y, direction = 1, speed = 14.0, damage = 1) => {
         item.mesh.position.set(x, y + 0.45, 0.05);
         item.mesh.scale.set(direction, 1, 1);
+        item.mesh.material.opacity = 0.95;
         item.mesh.visible = true;
         item.vx = direction * speed;
         item.lifetime = 0;
         item.maxLife = 2.4;
         item.active = true;
-        item.hitbox.activate();
+        item.hitbox.damage = damage;
+        if (damage > 0) {
+          item.hitbox.activate();
+        } else {
+          item.hitbox.deactivate();
+        }
         item.hitbox.owner.aabb.x = x;
         item.hitbox.owner.aabb.y = y + 0.45;
         item.hitbox.updatePosition(x, y + 0.45, 1);
@@ -60,8 +66,8 @@ export class InkShockwaveManager {
     );
 
     // 2. Persistent Tar Puddles (Phase 3 Hazard)
-    const puddleGeo = new THREE.PlaneGeometry(2.4, 0.3);
-    const puddleMat = new THREE.MeshBasicMaterial({
+    this._puddleGeo = new THREE.PlaneGeometry(2.4, 0.3);
+    this._puddleMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
       side: THREE.DoubleSide,
       transparent: true,
@@ -71,7 +77,7 @@ export class InkShockwaveManager {
 
     this.puddlePool = new Pool(
       () => {
-        const mesh = new THREE.Mesh(puddleGeo, puddleMat.clone());
+        const mesh = new THREE.Mesh(this._puddleGeo, this._puddleMat.clone());
         mesh.rotation.x = -Math.PI / 2;
         mesh.visible = false;
         this.scene.add(mesh);
@@ -95,6 +101,7 @@ export class InkShockwaveManager {
       },
       (item, x, y) => {
         item.mesh.position.set(x, y + 0.02, 0);
+        item.mesh.material.opacity = 0.85;
         item.mesh.visible = true;
         item.lifetime = 0;
         item.maxLife = CONFIG.BOSS.puddleLifetime;
@@ -108,8 +115,8 @@ export class InkShockwaveManager {
     );
 
     // 3. Ring Shockwaves (Crossbar Leap)
-    const ringGeo = new THREE.RingGeometry(0.2, 0.6, 24);
-    const ringMat = new THREE.MeshBasicMaterial({
+    this._ringGeo = new THREE.RingGeometry(0.2, 0.6, 24);
+    this._ringMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.inkDark),
       side: THREE.DoubleSide,
       transparent: true,
@@ -119,7 +126,7 @@ export class InkShockwaveManager {
 
     this.ringPool = new Pool(
       () => {
-        const mesh = new THREE.Mesh(ringGeo, ringMat.clone());
+        const mesh = new THREE.Mesh(this._ringGeo, this._ringMat.clone());
         mesh.visible = false;
         this.scene.add(mesh);
         return {
@@ -132,6 +139,7 @@ export class InkShockwaveManager {
       (item, x, y) => {
         item.mesh.position.set(x, y + 0.05, 0.02);
         item.mesh.scale.set(0.1, 0.1, 1);
+        item.mesh.material.opacity = 0.9;
         item.mesh.visible = true;
         item.life = 0;
         item.maxLife = 0.45;
@@ -141,19 +149,19 @@ export class InkShockwaveManager {
     );
   }
 
-  spawnFloorWave(x, y, direction = 1, speed = 14.0) {
-    this.wavePool.obtain(x, y, direction, speed);
+  spawnFloorWave(x, y, direction = 1, speed = 14.0, damage = 1) {
+    this.wavePool.obtain(x, y, direction, speed, damage);
   }
 
   spawnPuddle(x, y) {
     this.puddlePool.obtain(x, y);
   }
 
-  spawnRingShockwave(x, y) {
+  spawnRingShockwave(x, y, damage = 1) {
     this.ringPool.obtain(x, y);
     // Also launch waves in both directions
-    this.spawnFloorWave(x - 0.5, y, -1, 14.0);
-    this.spawnFloorWave(x + 0.5, y, 1, 14.0);
+    this.spawnFloorWave(x - 0.5, y, -1, 14.0, damage);
+    this.spawnFloorWave(x + 0.5, y, 1, 14.0, damage);
   }
 
   update(dt) {
@@ -209,8 +217,54 @@ export class InkShockwaveManager {
     });
   }
 
+  clear() {
+    for (const w of this.wavePool.activeList) {
+      w.hitbox.deactivate();
+      w.mesh.visible = false;
+      w.active = false;
+    }
+    for (const p of this.puddlePool.activeList) {
+      p.hitbox.deactivate();
+      p.mesh.visible = false;
+      p.active = false;
+    }
+    for (const r of this.ringPool.activeList) {
+      r.mesh.visible = false;
+    }
+    this.wavePool.releaseAll();
+    this.puddlePool.releaseAll();
+    this.ringPool.releaseAll();
+  }
+
   dispose() {
-    this.wavePool.forEach(w => combatManager.unregisterEntity(w.hitbox.owner));
-    this.puddlePool.forEach(p => combatManager.unregisterEntity(p.hitbox.owner));
+    this.clear();
+    for (const w of [...this.wavePool.activeList, ...this.wavePool.freeList]) {
+      w.hitbox.deactivate();
+      combatManager.unregisterEntity(w.hitbox.owner);
+      this.scene.remove(w.mesh);
+      w.mesh.material.dispose();
+    }
+    for (const p of [...this.puddlePool.activeList, ...this.puddlePool.freeList]) {
+      p.hitbox.deactivate();
+      combatManager.unregisterEntity(p.hitbox.owner);
+      this.scene.remove(p.mesh);
+      p.mesh.material.dispose();
+    }
+    for (const r of [...this.ringPool.activeList, ...this.ringPool.freeList]) {
+      this.scene.remove(r.mesh);
+      r.mesh.material.dispose();
+    }
+    this.wavePool.activeList.length = 0;
+    this.wavePool.freeList.length = 0;
+    this.puddlePool.activeList.length = 0;
+    this.puddlePool.freeList.length = 0;
+    this.ringPool.activeList.length = 0;
+    this.ringPool.freeList.length = 0;
+    this._waveGeo.dispose();
+    this._waveMat.dispose();
+    this._puddleGeo.dispose();
+    this._puddleMat.dispose();
+    this._ringGeo.dispose();
+    this._ringMat.dispose();
   }
 }

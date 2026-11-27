@@ -24,8 +24,8 @@ export class StateMachine {
     return this;
   }
 
-  changeState(name, payload = null) {
-    if (this.currentStateName === name) return;
+  changeState(name, payload = null, force = false) {
+    if (!force && this.currentStateName === name) return;
     if (!this.states.has(name)) {
       console.warn(`StateMachine: state "${name}" not registered.`);
       return;

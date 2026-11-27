@@ -14,8 +14,9 @@ export class ProjectileManager {
     this.projectiles = [];
     this.scrollOfReflectionUnlocked = false;
 
-    events.on('scroll_unlocked', ({ scrollId }) => {
-      if (scrollId >= 2) {
+    this._unsubScroll = events.on('scroll_unlocked', (payload = {}) => {
+      const id = payload?.scrollId ?? payload?.index ?? 0;
+      if (id >= 2) {
         this.scrollOfReflectionUnlocked = true;
       }
     });
@@ -70,8 +71,10 @@ export class ProjectileManager {
     });
   }
 
-  fixedUpdate(dt, player, enemies = [], bosses = []) {
+  fixedUpdate(dt, player, enemies = [], bosses = [], collision = null) {
     if (!player) return;
+    const colSys = collision || player.collision || null;
+    const playerDead = player.health <= 0 || player.fsm?.isInState?.('Dead');
 
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
@@ -86,17 +89,40 @@ export class ProjectileManager {
       p.group.position.set(p.x, p.y, 0.15);
       p.group.rotation.z = Math.atan2(p.vy, p.vx);
 
+      // Destroy projectiles on solid terrain impact
+      if (colSys?.solids?.length) {
+        let hitSolid = false;
+        for (let s = 0; s < colSys.solids.length; s++) {
+          const solid = colSys.solids[s];
+          if (solid.crumbleState === 'collapsed') continue;
+          if (solid.aabb?.contains(p.x, p.y)) {
+            hitSolid = true;
+            break;
+          }
+        }
+        if (hitSolid) {
+          if (this.inkSplash) {
+            this.inkSplash.spawnHitImpact(p.x, p.y, -(Math.sign(p.vx) || 1), 4, false, false);
+          }
+          this.removeProjectile(i);
+          continue;
+        }
+      }
+
       // 1. If not yet reflected, check collision with Player or Player's Parry/Attack
       if (!p.reflected) {
+        if (playerDead) continue;
         const dx = p.x - player.aabb.x;
         const dy = p.y - player.aabb.y;
         const dist = Math.hypot(dx, dy);
 
-        // Check 180ms Parry Deflect OR active Katana slash deflection!
-        const isParrying = player.fsm.isInState('Parry') || (player.combat && player.combat.parryTimer > 0);
-        const isAttacking = player.fsm.isInState('Attack') || player.fsm.isInState('AirAttack');
+        // Check active Parry OR active Katana slash facing projectile
+        const isParrying = !!(player.isParrying || player.fsm?.isInState?.('Parry'));
+        const isActiveSlash = player.combat?.attackPhase === 'active'
+          && (player.fsm?.isInState?.('Attack') || player.fsm?.isInState?.('AirAttack'))
+          && (dx * player.facing >= -0.35);
 
-        if (dist < 1.65 && (isParrying || isAttacking)) {
+        if (dist < 1.65 && (isParrying || isActiveSlash)) {
           // REFLECT PROJECTILE BACK AT HIGH VELOCITY (2.2x)!
           p.reflected = true;
           p.life = 0;
@@ -152,7 +178,7 @@ export class ProjectileManager {
 
         if (hitTarget) {
           // Reflected projectile deals 3 heavy weak-point damage!
-          hitTarget.takeDamage(3, p.x, true);
+          hitTarget.takeDamage(3, true, p.x);
 
           if (this.inkSplash) {
             this.inkSplash.spawnParryBurst(p.x, p.y, true);
@@ -163,7 +189,7 @@ export class ProjectileManager {
           if (this.scrollOfReflectionUnlocked) {
             for (const e of enemies) {
               if (e && !e.isDead && e !== hitTarget && Math.hypot(e.aabb.x - p.x, e.aabb.y - p.y) < 5.0) {
-                e.takeDamage(2, p.x);
+                e.takeDamage(2, false, p.x);
               }
             }
           }
@@ -176,18 +202,36 @@ export class ProjectileManager {
     }
   }
 
+  _disposeProjectileGroup(group) {
+    if (!group) return;
+    group.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material.dispose();
+      }
+    });
+    group.clear();
+    this.scene.remove(group);
+  }
+
   removeProjectile(index) {
     const p = this.projectiles[index];
     if (p && p.group) {
-      this.scene.remove(p.group);
+      this._disposeProjectileGroup(p.group);
     }
     this.projectiles.splice(index, 1);
   }
 
-  dispose() {
+  clear() {
     for (const p of this.projectiles) {
-      this.scene.remove(p.group);
+      this._disposeProjectileGroup(p.group);
     }
     this.projectiles = [];
+  }
+
+  dispose() {
+    this._unsubScroll?.();
+    this.clear();
   }
 }

@@ -133,7 +133,12 @@ export class SwingingLantern {
   grabPlayer(player) {
     this.grabbedPlayer = player;
     player.hasAirDash = true; // Refresh air dash on grab
-    player.fsm.changeState('LedgeHang', { side: 'lantern', x: this.lanternPos.x, y: this.lanternPos.y });
+    player.fsm.changeState('LedgeHang', {
+      side: 'lantern',
+      lantern: this,
+      x: this.lanternPos.x,
+      y: this.lanternPos.y,
+    });
     events.emit('lantern_grabbed', { x: this.lanternPos.x, y: this.lanternPos.y });
   }
 
@@ -143,12 +148,12 @@ export class SwingingLantern {
     const launchVx = Math.cos(this.angle) * tangentialSpeed + player.facing * 5.0;
     const launchVy = Math.max(8.0, CONFIG.PLAYER.jumpVelocity * 0.9);
 
-    player.velocity.x = launchVx;
-    player.velocity.y = launchVy;
-    player.fsm.changeState('JumpRise');
-
     this.grabbedPlayer = null;
     this.grabCooldown = 0.5;
+
+    player.fsm.changeState('JumpRise');
+    player.velocity.x = launchVx;
+    player.velocity.y = launchVy;
 
     // Lantern kicks back
     this.angularVelocity -= Math.sign(launchVx) * 0.6;
@@ -156,6 +161,14 @@ export class SwingingLantern {
   }
 
   dispose() {
+    this.grabbedPlayer = null;
+    this.group.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+        else obj.material.dispose();
+      }
+    });
     this.group.clear();
     this.scene.remove(this.group);
   }

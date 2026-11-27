@@ -87,6 +87,14 @@ export class SuspensionBridge {
   dispose() {
     this.collision.removeSolid(this.leftSolid);
     this.collision.removeSolid(this.rightSolid);
+    const disposedMats = new Set();
+    this.group.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        obj.material.dispose();
+      }
+    });
     this.group.clear();
     this.scene.remove(this.group);
   }

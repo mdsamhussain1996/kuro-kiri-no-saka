@@ -33,6 +33,7 @@ export class InkWingTengu {
     this.swoopTarget = { x: 0, y: 0 };
     this.swoopDir = { x: 0, y: 0 };
     this.stateTimer = 0;
+    this.staggerTimer = 0;
     this.cooldownTimer = 1.0;
 
     // Hitboxes
@@ -209,8 +210,17 @@ export class InkWingTengu {
       },
       fixedUpdate: (dt) => {
         this.stateTimer -= dt;
-        this.aabb.x += this.velocity.x * dt;
-        this.aabb.y += this.velocity.y * dt;
+        if (this.collision) {
+          const col = this.collision.moveAndSlide(this.aabb, this.velocity, dt, false);
+          if (col.grounded || col.ceiling || col.wallLeft || col.wallRight) {
+            this.attackHitbox.deactivate();
+            this.fsm.changeState('Ascend');
+            return;
+          }
+        } else {
+          this.aabb.x += this.velocity.x * dt;
+          this.aabb.y += this.velocity.y * dt;
+        }
 
         // Stream of ink droplets behind swoop dive
         if (this.inkSplash && Math.random() < 0.6) {
@@ -249,18 +259,24 @@ export class InkWingTengu {
     // --- HURT ---
     this.fsm.addState('Hurt', {
       enter: () => {
-        this.stateTimer = 0.2;
+        this.stateTimer = this.staggerTimer > 0 ? this.staggerTimer : 0.2;
         this.attackHitbox.deactivate();
         this.telegraphLine.visible = false;
       },
+      exit: () => {
+        this.isStaggered = false;
+        this.staggerTimer = 0;
+      },
       fixedUpdate: (dt) => {
         this.stateTimer -= dt;
+        if (this.staggerTimer > 0) this.staggerTimer = Math.max(0, this.staggerTimer - dt);
         this.aabb.x += this.velocity.x * dt;
         this.aabb.y += this.velocity.y * dt;
         this.velocity.x *= 0.85;
         this.velocity.y *= 0.85;
 
         if (this.stateTimer <= 0) {
+          this.isStaggered = false;
           this.fsm.changeState('Ascend');
         }
       }
@@ -283,6 +299,14 @@ export class InkWingTengu {
       },
       fixedUpdate: () => {}
     });
+  }
+
+  stagger(duration = 1.2) {
+    this.isStaggered = true;
+    this.staggerTimer = duration;
+    this.attackHitbox.deactivate();
+    this.telegraphLine.visible = false;
+    this.fsm.changeState('Hurt', null, true);
   }
 
   takeDamage(amount = 1, isInstantKill = false, attackerX = 0) {
@@ -322,10 +346,20 @@ export class InkWingTengu {
 
   dispose() {
     this.telegraphLine.visible = false;
+    this.telegraphLine.geometry?.dispose();
+    this.telegraphLine.material?.dispose();
     this.scene.remove(this.telegraphLine);
     this.hurtbox.deactivate();
     this.attackHitbox.deactivate();
     combatManager.unregisterEntity(this);
+    const disposedMats = new Set();
+    this.meshGroup.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        obj.material.dispose();
+      }
+    });
     this.meshGroup.clear();
     this.scene.remove(this.meshGroup);
   }

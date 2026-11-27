@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { AABB } from '../physics/Collision.js';
 import { events } from '../core/EventBus.js';
+import { saveSystem } from '../core/SaveSystem.js';
 
 export class InkShrine {
   constructor({ scene, collision, inkSplash, x = 55, y = 10 }) {
@@ -69,6 +70,7 @@ export class InkShrine {
     this.isUnlocked = true;
 
     player.hasInkStepUnlocked = true;
+    saveSystem.update({ hasInkStep: true });
 
     // Burst FX: Vermilion ring + ink droplets
     if (this.inkSplash) {
@@ -78,7 +80,7 @@ export class InkShrine {
 
     events.emit('shrine_unlocked', {
       title: 'Ink Step Unlocked',
-      description: 'Press Shift or K to dash through the air. Grants invincibility and clears wide gaps.',
+      description: 'Press Shift or L to dash through the air. Grants invincibility and clears wide gaps.',
     });
     events.emit('camera_shake', { amount: 0.3 });
   }
@@ -95,6 +97,14 @@ export class InkShrine {
 
   dispose() {
     this.collision.removeTrigger(this.triggerRef);
+    const disposedMats = new Set();
+    this.group.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material && !disposedMats.has(obj.material)) {
+        disposedMats.add(obj.material);
+        obj.material.dispose();
+      }
+    });
     this.group.clear();
     this.scene.remove(this.group);
   }

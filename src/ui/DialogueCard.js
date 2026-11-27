@@ -4,13 +4,14 @@ import { events } from '../core/EventBus.js';
 
 export class DialogueCard {
   constructor() {
+    this.isVisible = false;
     this.container = document.createElement('div');
     this.container.id = 'dialogue-card';
     this.container.style.cssText = `
       position: absolute;
-      top: 15%;
+      bottom: 120px;
       left: 50%;
-      transform: translateX(-50%) translateY(-20px);
+      transform: translateX(-50%) translateY(16px);
       width: 440px;
       max-width: 88vw;
       background: #eae5d9;
@@ -54,7 +55,7 @@ export class DialogueCard {
 
     this.hideTimeout = null;
 
-    events.on('shrine_unlocked', ({ title, description }) => {
+    this._unsubShrine = events.on('shrine_unlocked', ({ title, description }) => {
       this.show(title, description, 4500);
     });
   }
@@ -62,6 +63,7 @@ export class DialogueCard {
   show(titleText, bodyText, duration = 3500) {
     if (this.hideTimeout) clearTimeout(this.hideTimeout);
 
+    this.isVisible = true;
     this.title.innerText = titleText;
     this.body.innerText = bodyText;
 
@@ -74,11 +76,14 @@ export class DialogueCard {
   }
 
   hide() {
+    this.isVisible = false;
     this.container.style.opacity = '0';
-    this.container.style.transform = 'translateX(-50%) translateY(-20px)';
+    this.container.style.transform = 'translateX(-50%) translateY(16px)';
   }
 
   dispose() {
+    this._unsubShrine?.();
+    if (this.hideTimeout) clearTimeout(this.hideTimeout);
     if (this.container && this.container.parentNode) {
       this.container.parentNode.removeChild(this.container);
     }

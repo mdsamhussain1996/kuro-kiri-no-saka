@@ -61,10 +61,11 @@ export const CAMPAIGN_ACTS_DATA = {
     willows: [
       { x: 322, y: 52.4, lean: 1 },
       { x: 456, y: 70.9, lean: -1 },
-      { x: 525, y: 73.5, lean: 1 },
+      { x: 507, y: 73.5, lean: -1 },
     ],
 
     boss: { x: 530, y: 73.5 },
+    arenaLock: { minX: 506, maxX: 544, wallY: 74, wallH: 20 },
   },
 
   // ============================================================================
@@ -124,6 +125,7 @@ export const CAMPAIGN_ACTS_DATA = {
     ],
 
     boss: { x: 806, y: 97.6 },
+    arenaLock: { minX: 778, maxX: 822, wallY: 98, wallH: 24 },
   },
 };
 
@@ -184,14 +186,29 @@ export function buildWeepingWillow(scene, x, y, lean = 1, woodMat, foliageMat) {
   addInkOutline(trunk, 0.032);
   willow.add(trunk);
 
+  // Curved horizontal canopy boughs connecting the trunk to the hanging willow strands
+  for (const [boughEnd, boughY] of [[lean * 1.6 - 1.8, 3.9], [lean * 1.6 + 2.2, 4.1]]) {
+    const boughCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(lean * 1.2, 4.1, 0),
+      new THREE.Vector3((lean * 1.2 + boughEnd) * 0.5, boughY + 0.35, 0),
+      new THREE.Vector3(boughEnd, boughY - 0.15, 0),
+    ]);
+    const boughGeo = new THREE.TubeGeometry(boughCurve, 8, 0.11, 6, false);
+    const bough = new THREE.Mesh(boughGeo, woodMat);
+    addInkOutline(bough, 0.022);
+    willow.add(bough);
+  }
+
   // Hanging Weeping Willow Ink Strands
   for (let i = 0; i < 14; i++) {
-    const fx = lean * 0.4 + (i - 6) * 0.36;
-    const fy = 3.6 + Math.sin(i) * 0.65;
-    const len = 2.2 + (i % 3) * 0.65;
+    const t = i / 13;
+    const fx = lean * 1.3 + (t - 0.5) * 4.2;
+    const arch = 1.0 - Math.pow((t - 0.5) * 2.0, 2.0);
+    const fy = 3.85 + arch * 0.45;
+    const len = 2.0 + (i % 3) * 0.55;
     const strandGeo = new THREE.CylinderGeometry(0.03, 0.08, len, 5);
     const strand = new THREE.Mesh(strandGeo, foliageMat);
-    strand.position.set(fx, fy - len * 0.5, (i % 2 - 0.5) * 0.4);
+    strand.position.set(fx, fy - len * 0.5, (i % 2 - 0.5) * 0.35);
     addInkOutline(strand, 0.02);
     willow.add(strand);
   }

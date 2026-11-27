@@ -37,15 +37,30 @@ export class Level1 {
     this.inkSplash = inkSplash;
     this.shockwaves = new InkShockwaveManager(scene);
 
-    // Kurogane arena walls: only up while the fight is running
+    // Arena walls: only up while the active boss fight is running (per boss/act)
     this.arenaLockBoxes = [];
+    this.arenaLockBoxesByBoss = { kurogane: [], shirayuki: [], sumiOu: [] };
     this.arenaLockRefs = [];
-    events.on('boss_intro_start', () => this.setArenaLocked(true));
-    events.on('boss_defeated', () => this.setArenaLocked(false));
-    events.on('player_died', () => this.setArenaLocked(false));
-    events.on('player:respawn', () => this.setArenaLocked(false));
+    this.arenaLockRefsByBoss = { kurogane: [], shirayuki: [], sumiOu: [] };
+    this._unsubBossIntro = events.on('boss_intro_start', (payload) => {
+      if (payload?.name && payload.name === this.bossShirayuki?.name) {
+        this.setArenaLocked(true, 'shirayuki');
+      } else if (payload?.name && payload.name === this.bossSumiOu?.name) {
+        this.setArenaLocked(true, 'sumiOu');
+      } else {
+        this.setArenaLocked(true, 'kurogane');
+      }
+    });
+    this._unsubBossDefeated = events.on('boss_defeated', () => this.setArenaLocked(false));
+    this._unsubAct2BossDefeated = events.on('act2_boss_defeated', () => this.setArenaLocked(false));
+    this._unsubPlayerDied = events.on('player_died', () => this.setArenaLocked(false));
+    this._unsubPlayerRespawn = events.on('player:respawn', () => this.setArenaLocked(false));
 
     this.solidMeshes = [];
+    this.scenicObjects = [];
+    this.pitTriggers = [];
+    this.fogMesh = null;
+    this.lavaMesh = null;
     this.bambooStalks = [];
     this.swingingLanterns = [];
     this.checkpoints = [];
@@ -57,6 +72,8 @@ export class Level1 {
     this.bossShirayuki = null;
     this.bossSumiOu = null;
     this.templeBell = null;
+    this.bellSwingAmp = 0.09;
+    this.bellSwingPhase = 0;
     this.paintedBridges = [];
     this.bellRings = [];
     this.forgeWheels = [];
@@ -98,9 +115,12 @@ export class Level1 {
   buildLevel() {
     const data = LEVEL1_DATA;
 
-    // 1. Bottomless Fog Pit Trigger & Soft Parchment Mist Plane
+    // 1. Bottomless Fog Pit Triggers (Act I, Act II Sanctuary, Act III Molten River & Fallback Floor)
     const pitBox = new AABB(150, data.fogPitY, 400, 4.0);
-    this.collision.addTrigger(pitBox, null, { type: 'pit' });
+    this.pitTriggers.push(this.collision.addTrigger(pitBox, null, { type: 'pit', tag: 'act1_pit' }));
+    this.pitTriggers.push(this.collision.addTrigger(new AABB(427.5, 36, 275, 4.0), null, { type: 'pit', tag: 'act2_pit' }));
+    this.pitTriggers.push(this.collision.addTrigger(new AABB(700, 68.5, 320, 4.5), null, { type: 'pit', tag: 'act3_molten_river' }));
+    this.pitTriggers.push(this.collision.addTrigger(new AABB(650, 30, 600, 4.0), null, { type: 'pit', tag: 'act2_3_fallback_pit' }));
 
     const fogMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(CONFIG.PALETTE.parchment),
@@ -108,9 +128,9 @@ export class Level1 {
       opacity: 0.90,
       fog: false,
     });
-    const fogMesh = new THREE.Mesh(new THREE.PlaneGeometry(600, 14), fogMat);
-    fogMesh.position.set(150, data.fogPitY - 6, 1.5);
-    this.scene.add(fogMesh);
+    this.fogMesh = new THREE.Mesh(new THREE.PlaneGeometry(600, 14), fogMat);
+    this.fogMesh.position.set(150, data.fogPitY - 6, 1.5);
+    this.scene.add(this.fogMesh);
 
     // 2. Assemble Act I (Ch I: The Climb & Ch II: The Broken Pass)
     this.buildSolids(data.act1.solids);
@@ -191,16 +211,16 @@ export class Level1 {
       scene: this.scene,
       collision: this.collision,
       x: 28,
-      y: 6.2,
+      y: 5.9,
     }));
 
     // 9. Bell-revealed Invisible-Ink Platforms (solidify & glow for 8s when Bell rings)
     this.mistPlatforms = [];
     this.mistRevealTimer = 0;
     const mistPlats = [
-      { x: 185, y: 24.5, w: 4.5, h: 0.6 },
-      { x: 193, y: 26.5, w: 4.5, h: 0.6 },
-      { x: 350, y: 54.0, w: 5.0, h: 0.6 },
+      { x: 179, y: 32.5, w: 4.5, h: 0.6 },
+      { x: 191, y: 33.8, w: 4.5, h: 0.6 },
+      { x: 388, y: 61.5, w: 5.0, h: 0.6 },
     ];
     for (const mp of mistPlats) {
       const mesh = new THREE.Mesh(
@@ -217,7 +237,7 @@ export class Level1 {
     const strokes = [
       { ch: 1, x: 22, y: 5.5 }, { ch: 1, x: 35, y: 9.0 }, { ch: 1, x: 42, y: 11.0 },
       { ch: 2, x: 65, y: 14.5 }, { ch: 2, x: 85, y: 18.2 }, { ch: 2, x: 96, y: 19.0 },
-      { ch: 3, x: 130, y: 15.0 }, { ch: 3, x: 163, y: 34.0 }, { ch: 3, x: 185, y: 26.5 },
+      { ch: 3, x: 130, y: 15.0 }, { ch: 3, x: 163, y: 34.0 }, { ch: 3, x: 179, y: 34.5 },
       { ch: 5, x: 330, y: 55.0 }, { ch: 5, x: 375, y: 58.0 }, { ch: 5, x: 440, y: 65.0 },
       { ch: 7, x: 610, y: 80.0 }, { ch: 7, x: 670, y: 86.0 }, { ch: 7, x: 730, y: 92.0 },
     ];
@@ -291,10 +311,16 @@ export class Level1 {
       }));
     }
     for (const p of act2.pagodas) {
-      buildPagodaTower(this.scene, p.x, p.y, p.tiers, this.woodMat, this.cliffMat);
+      this.scenicObjects.push(buildPagodaTower(this.scene, p.x, p.y, p.tiers, this.woodMat, this.cliffMat));
     }
     for (const w of act2.willows) {
-      buildWeepingWillow(this.scene, w.x, w.y, w.lean, this.woodMat, this.pineFoliageMat);
+      this.scenicObjects.push(buildWeepingWillow(this.scene, w.x, w.y, w.lean, this.woodMat, this.pineFoliageMat));
+    }
+    if (act2.arenaLock) {
+      this.arenaLockBoxesByBoss.shirayuki.push(
+        new AABB(act2.arenaLock.minX, act2.arenaLock.wallY + act2.arenaLock.wallH * 0.5 - 2, 1, act2.arenaLock.wallH),
+        new AABB(act2.arenaLock.maxX, act2.arenaLock.wallY + act2.arenaLock.wallH * 0.5 - 2, 1, act2.arenaLock.wallH)
+      );
     }
 
     // Boss 2: Lady Shirayuki, the Mist Weaver
@@ -372,9 +398,16 @@ export class Level1 {
       opacity: 0.72,
       fog: false,
     });
-    const lavaMesh = new THREE.Mesh(lavaGeo, lavaMat);
-    lavaMesh.position.set(700, 68.5, -1.5);
-    this.scene.add(lavaMesh);
+    this.lavaMesh = new THREE.Mesh(lavaGeo, lavaMat);
+    this.lavaMesh.position.set(700, 68.5, -1.5);
+    this.scene.add(this.lavaMesh);
+
+    if (act3.arenaLock) {
+      this.arenaLockBoxesByBoss.sumiOu.push(
+        new AABB(act3.arenaLock.minX, act3.arenaLock.wallY + act3.arenaLock.wallH * 0.5 - 2, 1, act3.arenaLock.wallH),
+        new AABB(act3.arenaLock.maxX, act3.arenaLock.wallY + act3.arenaLock.wallH * 0.5 - 2, 1, act3.arenaLock.wallH)
+      );
+    }
 
     // Grand Foundry Torii & Boss 3: Lord Sumi-Ou, Warlord of the Iron Brush
     this.buildToriiGate(800, 97.6);
@@ -396,7 +429,8 @@ export class Level1 {
       const box = new AABB(s.x, s.y, s.w, s.h);
       if (s.arenaLock) {
         // Arena walls stay down until the boss intro starts (see setArenaLocked)
-        (this.arenaLockBoxes ||= []).push(box);
+        this.arenaLockBoxes.push(box);
+        this.arenaLockBoxesByBoss.kurogane.push(box);
         continue;
       }
       const solidRef = this.collision.addSolid(box, {
@@ -483,7 +517,7 @@ export class Level1 {
 
     for (const ow of oneWays) {
       const box = new AABB(ow.x, ow.y, ow.w, ow.h);
-      this.collision.addOneWay(box);
+      const solidRef = this.collision.addOneWay(box);
 
       const group = new THREE.Group();
       group.position.set(ow.x, ow.y, 0);
@@ -506,6 +540,7 @@ export class Level1 {
       }
 
       this.scene.add(group);
+      this.solidMeshes.push({ mesh, group, solidRef, originalColor: 0x5c5b57 });
     }
   }
 
@@ -579,6 +614,7 @@ export class Level1 {
     }
 
     this.scene.add(pine);
+    this.scenicObjects.push(pine);
     return pine;
   }
 
@@ -617,6 +653,7 @@ export class Level1 {
       curb.rotation.z = (i % 2 === 0 ? 1 : -1) * 0.03;
       addInkOutline(curb, 0.035);
       this.scene.add(curb);
+      this.scenicObjects.push(curb);
     }
   }
 
@@ -655,6 +692,7 @@ export class Level1 {
 
     pavilion.add(this.templeBell);
     this.scene.add(pavilion);
+    this.scenicObjects.push(pavilion);
   }
 
   buildCheckpoints(cps) {
@@ -766,6 +804,7 @@ export class Level1 {
     torii.add(tablet);
 
     this.scene.add(torii);
+    this.scenicObjects.push(torii);
   }
 
   // --- Visual Landmark: Giant Pale Full Moon Directly Behind the Torii (fog: false!) ---
@@ -797,6 +836,7 @@ export class Level1 {
     moonGroup.add(this.moon);
 
     this.scene.add(moonGroup);
+    this.scenicObjects.push(moonGroup);
   }
 
   // --- Visual Landmark: Floating Stolen Scroll ---
@@ -825,24 +865,39 @@ export class Level1 {
     this.scrollGroup.add(this.scrollLight);
 
     this.scene.add(this.scrollGroup);
+    this.scenicObjects.push(this.scrollGroup);
   }
 
   // --- INNOVATION 1: Interactive "Living Brushstroke" Ink Bridge (Press E or Click Canvas) ---
+  _disposeObject3D(obj) {
+    if (!obj) return;
+    const disposedMats = new Set([this.stoneMat, this.cliffMat, this.woodMat, this.pineFoliageMat]);
+    obj.traverse?.((node) => {
+      if (node.geometry) node.geometry.dispose();
+      if (node.material && !disposedMats.has(node.material)) {
+        disposedMats.add(node.material);
+        node.material.dispose();
+      }
+    });
+    obj.clear?.();
+    this.scene.remove(obj);
+  }
+
   paintInkBridge(x, y, facing = 1) {
     // Limit active painted bridges to 3 (remove oldest if exceeded)
     if (this.paintedBridges.length >= 3) {
       const oldest = this.paintedBridges.shift();
       this.collision.removeSolid(oldest.solidRef);
-      this.scene.remove(oldest.group);
+      this._disposeObject3D(oldest.group);
     }
 
     const w = 4.6;
     const h = 0.44;
-    const bx = x + facing * 2.5;
-    const by = y - 0.55;
+    const bx = x + facing * (w * 0.5 + 0.45);
+    const by = y - 1.12;
 
     const box = new AABB(bx, by, w, h);
-    const solidRef = this.collision.addSolid(box, { runnable: false, crumbling: false });
+    const solidRef = this.collision.addOneWay(box);
 
     const group = new THREE.Group();
     group.position.set(bx, by, 0);
@@ -902,7 +957,8 @@ export class Level1 {
 
     // Swing the Temple Bell vigorously if nearby
     if (this.templeBell) {
-      this.templeBell.rotation.z = 0.45;
+      this.bellSwingAmp = 0.45;
+      this.templeBell.rotation.z = this.bellSwingAmp;
     }
 
     // Create expanding concentric calligraphic soundwave rings
@@ -950,13 +1006,34 @@ export class Level1 {
   }
 
   // --- Fixed Update (60 Hz) ---
-  setArenaLocked(locked) {
-    if (locked && this.arenaLockRefs.length === 0) {
-      this.arenaLockRefs = this.arenaLockBoxes.map((box) =>
-        this.collision.addSolid(new AABB(box.x, box.y, box.width, box.height)));
-    } else if (!locked && this.arenaLockRefs.length) {
-      for (const ref of this.arenaLockRefs) this.collision.removeSolid(ref);
-      this.arenaLockRefs = [];
+  setArenaLocked(locked, bossKey = null) {
+    if (locked) {
+      const key = bossKey || 'kurogane';
+      const boxes = this.arenaLockBoxesByBoss[key] || [];
+      const existing = this.arenaLockRefsByBoss[key] || [];
+      if (existing.length === 0 && boxes.length > 0) {
+        const added = boxes.map((box) =>
+          this.collision.addSolid(new AABB(box.x, box.y, box.width, box.height))
+        );
+        this.arenaLockRefsByBoss[key] = added;
+        this.arenaLockRefs = [
+          ...this.arenaLockRefsByBoss.kurogane,
+          ...this.arenaLockRefsByBoss.shirayuki,
+          ...this.arenaLockRefsByBoss.sumiOu,
+        ];
+      }
+    } else {
+      const keys = bossKey ? [bossKey] : ['kurogane', 'shirayuki', 'sumiOu'];
+      for (const k of keys) {
+        const refs = this.arenaLockRefsByBoss[k] || [];
+        for (const ref of refs) this.collision.removeSolid(ref);
+        this.arenaLockRefsByBoss[k] = [];
+      }
+      this.arenaLockRefs = [
+        ...this.arenaLockRefsByBoss.kurogane,
+        ...this.arenaLockRefsByBoss.shirayuki,
+        ...this.arenaLockRefsByBoss.sumiOu,
+      ];
     }
   }
 
@@ -1050,7 +1127,8 @@ export class Level1 {
         dt,
         player,
         this.enemies,
-        [this.boss, this.bossShirayuki, this.bossSumiOu]
+        [this.boss, this.bossShirayuki, this.bossSumiOu],
+        this.collision
       );
     }
 
@@ -1059,7 +1137,9 @@ export class Level1 {
     }
 
     if (this.templeBell) {
-      this.templeBell.rotation.z = Math.sin(performance.now() * 0.0018) * 0.09;
+      this.bellSwingPhase += dt * 4.5;
+      this.bellSwingAmp = Math.max(0.06, this.bellSwingAmp * Math.exp(-1.5 * dt));
+      this.templeBell.rotation.z = Math.sin(this.bellSwingPhase) * this.bellSwingAmp;
     }
 
     // Update Living Brushstroke Ink Bridges
@@ -1071,7 +1151,7 @@ export class Level1 {
       }
       if (br.timer <= 0) {
         this.collision.removeSolid(br.solidRef);
-        this.scene.remove(br.group);
+        this._disposeObject3D(br.group);
         this.paintedBridges.splice(i, 1);
       }
     }
@@ -1086,7 +1166,7 @@ export class Level1 {
       ring.r1Mat.opacity = Math.max(0, (1.0 - p) * 0.9);
       ring.r2Mat.opacity = Math.max(0, (1.0 - p) * 0.85);
       if (ring.timer <= 0) {
-        this.scene.remove(ring.group);
+        this._disposeObject3D(ring.group);
         this.bellRings.splice(i, 1);
       }
     }
@@ -1115,18 +1195,102 @@ export class Level1 {
     }
   }
 
+  clearPaintedBridges() {
+    for (const br of this.paintedBridges) {
+      this.collision.removeSolid(br.solidRef);
+      this._disposeObject3D(br.group);
+    }
+    this.paintedBridges = [];
+  }
+
+  clearMistPlatforms() {
+    this.mistRevealTimer = 0;
+    for (const mp of this.mistPlatforms || []) {
+      if (mp.solidRef) {
+        this.collision.removeSolid(mp.solidRef);
+        mp.solidRef = null;
+      }
+      if (mp.mesh?.material) {
+        mp.mesh.material.wireframe = true;
+        mp.mesh.material.opacity = 0.16;
+      }
+    }
+  }
+
   dispose() {
+    this._unsubBossIntro?.();
+    this._unsubBossDefeated?.();
+    this._unsubAct2BossDefeated?.();
+    this._unsubPlayerDied?.();
+    this._unsubPlayerRespawn?.();
+
+    this.setArenaLocked(false);
+    for (const tr of this.pitTriggers) {
+      this.collision.removeTrigger(tr);
+    }
+    this.pitTriggers = [];
+
     for (const item of this.solidMeshes) {
       this.collision.removeSolid(item.solidRef);
-      this.scene.remove(item.group || item.mesh);
+      this._disposeObject3D(item.group || item.mesh);
     }
+    this.solidMeshes = [];
+
+    for (const obj of this.scenicObjects) {
+      this._disposeObject3D(obj);
+    }
+    this.scenicObjects = [];
+
+    for (const fw of this.forgeWheels) {
+      this._disposeObject3D(fw.mesh);
+    }
+    this.forgeWheels = [];
+
+    if (this.fogMesh) {
+      this._disposeObject3D(this.fogMesh);
+      this.fogMesh = null;
+    }
+    if (this.lavaMesh) {
+      this._disposeObject3D(this.lavaMesh);
+      this.lavaMesh = null;
+    }
+
+    this.clearPaintedBridges();
+    for (const ring of this.bellRings) {
+      this._disposeObject3D(ring.group);
+    }
+    this.bellRings = [];
+
+    for (const mp of this.mistPlatforms || []) {
+      if (mp.solidRef) {
+        this.collision.removeSolid(mp.solidRef);
+        mp.solidRef = null;
+      }
+      this._disposeObject3D(mp.mesh);
+    }
+    this.mistPlatforms = [];
+
+    for (const c of this.collectibles || []) {
+      this._disposeObject3D(c.mesh);
+    }
+    this.collectibles = [];
+
     for (const b of this.bambooStalks) b.dispose();
     for (const l of this.swingingLanterns) l.dispose();
     for (const cp of this.checkpoints) cp.dispose();
+    for (const cp of this.campaignCheckpoints) cp.dispose();
     for (const e of this.enemies) e.dispose();
     if (this.shrine) this.shrine.dispose();
     if (this.bridge) this.bridge.dispose();
     if (this.boss) this.boss.dispose();
+    if (this.bossShirayuki) this.bossShirayuki.dispose();
+    if (this.bossSumiOu) this.bossSumiOu.dispose();
+    if (this.projectiles) this.projectiles.dispose();
     if (this.shockwaves) this.shockwaves.dispose();
+
+    this.stoneMat?.dispose();
+    this.cliffMat?.dispose();
+    this.woodMat?.dispose();
+    this.pineFoliageMat?.dispose();
   }
 }

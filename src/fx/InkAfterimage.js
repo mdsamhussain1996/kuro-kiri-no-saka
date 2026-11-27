@@ -25,11 +25,13 @@ export class InkAfterimageManager {
           age: 0,
           maxAge: CONFIG.PLAYER.afterimageLifetime,
           scale: 1.0,
+          facing: 1,
         };
       },
       (item, x, y, z, facing, scaleY = 1.0) => {
+        item.facing = facing < 0 ? -1 : 1;
         item.mesh.position.set(x, y, z);
-        item.mesh.scale.set(1.0, scaleY, 1.0);
+        item.mesh.scale.set(item.facing, scaleY, 1.0);
         item.mesh.material.opacity = 0.55;
         item.mesh.visible = true;
         item.age = 0;
@@ -55,7 +57,7 @@ export class InkAfterimageManager {
       // Shrink and fade over lifetime per §4.2
       const fade = 1.0 - progress;
       item.mesh.material.opacity = fade * 0.55;
-      item.mesh.scale.x = (1.0 - progress * 0.25);
+      item.mesh.scale.x = item.facing * (1.0 - progress * 0.25);
       item.mesh.scale.y = (1.0 - progress * 0.25);
       return true;
     });
@@ -63,6 +65,10 @@ export class InkAfterimageManager {
 
   dispose() {
     this.pool.releaseAll();
+    for (const item of this.pool.freeList) {
+      this.scene.remove(item.mesh);
+      item.mesh.material.dispose();
+    }
     this.sharedGeometry.dispose();
     this.sharedMaterial.dispose();
   }
